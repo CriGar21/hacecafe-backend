@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Categoria {
+  id            Int        @id @default(autoincrement())
+  nombre        String     @db.VarChar(80)
+  icono         String?    @db.VarChar(10)
+  activa        Boolean    @default(true)
+  ordenDisplay  Int?
+  productos     Producto[]
+
+  @@map("categorias")
+}
+
+model Producto {
+  id                 Int       @id @default(autoincrement())
+  categoriaId        Int
+  nombre             String    @db.VarChar(120)
+  descripcion        String?   @db.Text
+  precio             Decimal   @db.Decimal(10, 2)
+  precioCosto        Decimal?  @db.Decimal(10, 2)
+  disponible         Boolean   @default(true)
+  imagenUrl          String?   @db.VarChar(300)
+  stockActual        Int       @default(0)
+  stockMinimo        Int       @default(5)
+  tiempoPreparacion  Int?
+  ordenDisplay       Int?
+  creadoEn           DateTime  @default(now())
+  actualizadoEn      DateTime  @updatedAt
+
+  categoria          Categoria @relation(fields: [categoriaId], references: [id])
+
+  @@index([disponible])
+  @@index([categoriaId])
+  @@map("productos")
+}
