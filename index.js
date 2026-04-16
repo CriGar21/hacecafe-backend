@@ -1,49 +1,69 @@
-const express = require('express')
-const cors = require('cors')
-const { PrismaClient } = require('@prisma/client')
-require('dotenv').config()
+const express = require("express");
+const cors = require("cors");
+const http = require("http");
+const { Server } = require("socket.io");
+const { PrismaClient } = require("@prisma/client");
+require("dotenv").config();
 
-const app = express()
-const prisma = new PrismaClient()
-const PORT = process.env.PORT || 3001
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+const prisma = new PrismaClient();
+const PORT = process.env.PORT || 3001;
 
-// Middlewares — procesan cada request antes de llegar a las rutas
-app.use(cors())
-app.use(express.json())
+// Middlewares
+app.use(cors());
+app.use(express.json());
 
-// Ruta de prueba — para verificar que el servidor vive
-app.get('/', (req, res) => {
-  res.json({ mensaje: 'Servidor HaceCafe funcionando', version: '1.0' })
-})
+// Inyectar io en cada request para usarlo desde los controllers
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
-// Ruta real — devuelve todos los productos con su categoría
-app.get('/productos', async (req, res) => {
+// Rutas
+app.use("/auth", require("./routes/auth"));
+app.use("/pedidos", require("./routes/pedidos"));
+
+// Rutas de productos y categorías (sin autenticación por ahora)
+app.get("/productos", async (req, res) => {
   try {
     const productos = await prisma.producto.findMany({
       where: { disponible: true },
       include: { categoria: true },
-      orderBy: { ordenDisplay: 'asc' }
-    })
-    res.json(productos)
+      orderBy: { ordenDisplay: "asc" },
+    });
+    res.json(productos);
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener productos' })
+    res.status(500).json({ error: "Error al obtener productos" });
   }
-})
+});
 
-// Ruta — devuelve todas las categorías activas
-app.get('/categorias', async (req, res) => {
+app.get("/categorias", async (req, res) => {
   try {
     const categorias = await prisma.categoria.findMany({
       where: { activa: true },
-      orderBy: { ordenDisplay: 'asc' }
-    })
-    res.json(categorias)
+      orderBy: { ordenDisplay: "asc" },
+    });
+    res.json(categorias);
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener categorías' })
+    res.status(500).json({ error: "Error al obtener categorías" });
   }
-})
+});
 
-// Arrancar el servidor
-app.listen(PORT, () => {
-  console.log(`Servidor HaceCafe corriendo en http://localhost:${PORT}`)
-})
+// Socket.IO — conexiones en tiempo real
+io.on("connection", (socket) => {
+  console.log("Cliente conectado:", socket.id);
+  socket.on("disconnect", () => {
+    console.log("Cliente desconectado:", socket.id);
+  });
+});
+
+// Ruta de salud
+app.get("/", (req, res) => {
+  res.json({ mensaje: "Servidor HaceCafe funcionando", version: "2.0" });
+});
+
+server.listen(PORT, () => {
+  console.log(`Servidor HaceCafe corriendo en http://localhost:${PORT}`);
+});

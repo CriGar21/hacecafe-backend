@@ -35,8 +35,70 @@ model Producto {
   actualizadoEn      DateTime  @updatedAt
 
   categoria          Categoria @relation(fields: [categoriaId], references: [id])
+  items    ItemPedido[]
 
   @@index([disponible])
   @@index([categoriaId])
   @@map("productos")
+}
+
+model Usuario {
+  id           Int       @id @default(autoincrement())
+  nombre       String    @db.VarChar(100)
+  email        String    @unique @db.VarChar(150)
+  password     String    @db.VarChar(255)
+  rol          Rol       @default(EMPLEADO)
+  activo       Boolean   @default(true)
+  creadoEn     DateTime  @default(now())
+  pedidos      Pedido[]
+
+  @@map("usuarios")
+}
+
+model Pedido {
+  id           Int           @id @default(autoincrement())
+  numero       Int           @unique
+  usuarioId    Int
+  mesa         String?       @db.VarChar(20)
+  estado       EstadoPedido  @default(PENDIENTE)
+  total        Decimal       @db.Decimal(10, 2)
+  notas        String?       @db.Text
+  creadoEn     DateTime      @default(now())
+  actualizadoEn DateTime     @updatedAt
+
+  usuario      Usuario       @relation(fields: [usuarioId], references: [id])
+  items        ItemPedido[]
+
+  @@index([estado])
+  @@index([creadoEn])
+  @@map("pedidos")
+}
+
+model ItemPedido {
+  id          Int      @id @default(autoincrement())
+  pedidoId    Int
+  productoId  Int
+  cantidad    Int
+  precioUnit  Decimal  @db.Decimal(10, 2)
+  subtotal    Decimal  @db.Decimal(10, 2)
+  notas       String?  @db.VarChar(200)
+
+  pedido      Pedido   @relation(fields: [pedidoId], references: [id])
+  producto    Producto @relation(fields: [productoId], references: [id])
+
+  @@map("items_pedido")
+}
+
+enum Rol {
+  DUEÑO
+  EMPLEADO
+  COCINA
+}
+
+enum EstadoPedido {
+  PENDIENTE
+  EN_PREPARACION
+  LISTO
+  ENTREGADO
+  CANCELADO
 }
