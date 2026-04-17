@@ -11,21 +11,88 @@ const io = new Server(server, { cors: { origin: "*" } });
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Inyectar io en cada request para usarlo desde los controllers
 app.use((req, res, next) => {
   req.io = io;
   next();
 });
 
-// Rutas
+// Ruta pública — ANTES del router de pedidos protegido
+app.post("/pedidos/publico", async (req, res) => {
+  const { mesa, items, notas } = req.body;
+
+  try {
+    let total = 0;
+    const itemsValidados = [];
+
+    for (const item of items) {
+      const producto = await prisma.producto.findUnique({
+        where: { id: item.productoId },
+      });
+      if (!producto || !producto.disponible) {
+        return res.status(400).json({ error: "Producto no disponible" });
+      }
+      if (producto.stockActual < item.cantidad) {
+        return res
+          .status(400)
+          .json({ error: `Stock insuficiente de ${producto.nombre}` });
+      }
+      const subtotal = Number(producto.precio) * item.cantidad;
+      total += subtotal;
+      itemsValidados.push({ producto, cantidad: item.cantidad, subtotal });
+    }
+
+    const ultimoPedido = await prisma.pedido.findFirst({
+      orderBy: { numero: "desc" },
+    });
+    const numero = (ultimoPedido?.numero || 0) + 1;
+
+    const pedido = await prisma.$transaction(async (tx) => {
+      const nuevoPedido = await tx.pedido.create({
+        data: {
+          numero,
+          usuarioId: 1,
+          mesa,
+          notas,
+          total,
+          items: {
+            create: itemsValidados.map((i) => ({
+              productoId: i.producto.id,
+              cantidad: i.cantidad,
+              precioUnit: i.producto.precio,
+              subtotal: i.subtotal,
+            })),
+          },
+        },
+        include: { items: { include: { producto: true } } },
+      });
+
+      for (const item of itemsValidados) {
+        await tx.producto.update({
+          where: { id: item.producto.id },
+          data: { stockActual: { decrement: item.cantidad } },
+        });
+      }
+
+      return nuevoPedido;
+    });
+
+    console.log("Emitiendo a", io.engine.clientsCount, "clientes conectados");
+    io.emit("nuevo_pedido", pedido);
+
+    res.status(201).json(pedido);
+  } catch (error) {
+    console.error("Error pedido publico:", error);
+    res.status(500).json({ error: "Error al crear pedido" });
+  }
+});
+
+// Rutas protegidas — DESPUÉS de la ruta pública
 app.use("/auth", require("./routes/auth"));
 app.use("/pedidos", require("./routes/pedidos"));
 
-// Rutas de productos y categorías (sin autenticación por ahora)
 app.get("/productos", async (req, res) => {
   try {
     const productos = await prisma.producto.findMany({
@@ -51,7 +118,6 @@ app.get("/categorias", async (req, res) => {
   }
 });
 
-// Socket.IO — conexiones en tiempo real
 io.on("connection", (socket) => {
   console.log("Cliente conectado:", socket.id);
   socket.on("disconnect", () => {
@@ -59,7 +125,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Ruta de salud
 app.get("/", (req, res) => {
   res.json({ mensaje: "Servidor HaceCafe funcionando", version: "2.0" });
 });
