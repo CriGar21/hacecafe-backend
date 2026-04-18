@@ -1,20 +1,22 @@
-const express = require("express");
-const router = express.Router();
+const express = require('express')
+const router = express.Router()
 const {
   crearPedido,
   obtenerPedidos,
   actualizarEstado,
-} = require("../controllers/pedidosController");
-const { verificarToken, soloRoles } = require("../middlewares/auth");
+  obtenerPedidosPorMesa,
+  obtenerPedidoPorNumero,
+  cobrarMesa
+} = require('../controllers/pedidosController')
+const { verificarToken, soloRoles } = require('../middlewares/auth')
 
-router.use(verificarToken);
+router.use(verificarToken)
 
-router.post("/", crearPedido);
-router.get("/", obtenerPedidos);
-router.patch(
-  "/:id/estado",
-  soloRoles("DUEÑO", "EMPLEADO", "COCINA"),
-  actualizarEstado,
-);
+router.post('/', crearPedido)
+router.get('/', obtenerPedidos)
+router.patch('/:id/estado', actualizarEstado)
+router.get('/mesa/:mesa', obtenerPedidosPorMesa)
+router.get('/numero/:numero', obtenerPedidoPorNumero)
+router.post('/cobrar', soloRoles('DUEÑO', 'EMPLEADO'), cobrarMesa)
 
-module.exports = router;
+module.exports = router

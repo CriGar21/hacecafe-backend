@@ -6,7 +6,6 @@ const crearPedido = async (req, res) => {
   const usuarioId = req.usuario.id;
 
   try {
-    // Calcular total y verificar stock
     let total = 0;
     const itemsValidados = [];
 
@@ -14,7 +13,6 @@ const crearPedido = async (req, res) => {
       const producto = await prisma.producto.findUnique({
         where: { id: item.productoId },
       });
-
       if (!producto || !producto.disponible) {
         return res
           .status(400)
@@ -25,7 +23,6 @@ const crearPedido = async (req, res) => {
           .status(400)
           .json({ error: `Stock insuficiente de ${producto.nombre}` });
       }
-
       const subtotal = Number(producto.precio) * item.cantidad;
       total += subtotal;
       itemsValidados.push({
@@ -36,13 +33,11 @@ const crearPedido = async (req, res) => {
       });
     }
 
-    // Número de pedido autoincremental del día
     const ultimoPedido = await prisma.pedido.findFirst({
       orderBy: { numero: "desc" },
     });
     const numero = (ultimoPedido?.numero || 0) + 1;
 
-    // Crear pedido con sus ítems en una sola transacción
     const pedido = await prisma.$transaction(async (tx) => {
       const nuevoPedido = await tx.pedido.create({
         data: {
@@ -64,7 +59,6 @@ const crearPedido = async (req, res) => {
         include: { items: { include: { producto: true } }, usuario: true },
       });
 
-      // Descontar stock de cada producto
       for (const item of itemsValidados) {
         await tx.producto.update({
           where: { id: item.producto.id },
@@ -75,9 +69,7 @@ const crearPedido = async (req, res) => {
       return nuevoPedido;
     });
 
-    // Emitir evento en tiempo real a la pantalla de cocina
     req.io.emit("nuevo_pedido", pedido);
-
     res.status(201).json(pedido);
   } catch (error) {
     console.error(error);
@@ -87,7 +79,6 @@ const crearPedido = async (req, res) => {
 
 const obtenerPedidos = async (req, res) => {
   const { estado } = req.query;
-
   try {
     const pedidos = await prisma.pedido.findMany({
       where: estado ? { estado } : {},
@@ -103,21 +94,125 @@ const obtenerPedidos = async (req, res) => {
 const actualizarEstado = async (req, res) => {
   const { id } = req.params;
   const { estado } = req.body;
-
   try {
     const pedido = await prisma.pedido.update({
       where: { id: Number(id) },
       data: { estado },
       include: { items: { include: { producto: true } } },
     });
-
-    // Notificar cambio de estado en tiempo real
     req.io.emit("pedido_actualizado", pedido);
-
     res.json(pedido);
   } catch (error) {
     res.status(500).json({ error: "Error al actualizar pedido" });
   }
 };
 
-module.exports = { crearPedido, obtenerPedidos, actualizarEstado };
+const obtenerPedidosPorMesa = async (req, res) => {
+  const { mesa } = req.params
+  try {
+    const pedidos = await prisma.pedido.findMany({
+      where: {
+        mesa,
+        estado: { notIn: ['COBRADO', 'CANCELADO'] }
+      },
+      include: { items: { include: { producto: true } } },
+      orderBy: { creadoEn: 'asc' }
+    })
+    res.json(pedidos)
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener pedidos de mesa' })
+  }
+}
+
+const obtenerPedidoPorNumero = async (req, res) => {
+  const { numero } = req.params
+  try {
+    const pedido = await prisma.pedido.findFirst({
+      where: {
+        numero: Number(numero),
+        estado: { notIn: ['COBRADO', 'CANCELADO'] }
+      },
+      include: { items: { include: { producto: true } } }
+    })
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado o ya cobrado' })
+    res.json([pedido])
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener pedido' })
+  }
+}
+
+const cobrarMesa = async (req, res) => {
+  const { mesa, numeroPedido, metodoPago } = req.body
+  const usuarioId = req.usuario.id
+
+  try {
+    let pedidos = []
+
+    if (numeroPedido) {
+      // Cobrar pedido individual por número
+      const pedido = await prisma.pedido.findFirst({
+        where: {
+          numero: Number(numeroPedido),
+          estado: { notIn: ['COBRADO', 'CANCELADO'] }
+        },
+        include: { items: { include: { producto: true } } }
+      })
+      if (!pedido) return res.status(400).json({ error: 'Pedido no encontrado o ya cobrado' })
+      pedidos = [pedido]
+    } else if (mesa) {
+      // Cobrar todos los pedidos de la mesa
+      pedidos = await prisma.pedido.findMany({
+        where: {
+          mesa,
+          estado: { notIn: ['COBRADO', 'CANCELADO'] }
+        },
+        include: { items: { include: { producto: true } } }
+      })
+      if (pedidos.length === 0) {
+        return res.status(400).json({ error: 'No hay pedidos activos en esta mesa' })
+      }
+    } else {
+      return res.status(400).json({ error: 'Indicá mesa o número de pedido' })
+    }
+
+    const totalCobrado = pedidos.reduce((acc, p) => acc + Number(p.total), 0)
+
+    await prisma.$transaction(async (tx) => {
+      for (const pedido of pedidos) {
+        await tx.pedido.update({
+          where: { id: pedido.id },
+          data: { estado: 'COBRADO' }
+        })
+      }
+    })
+
+    req.io.emit('mesa_cobrada', {
+      mesa: mesa || null,
+      pedidoIds: pedidos.map(p => p.id),
+      totalCobrado,
+      metodoPago
+    })
+
+    res.json({
+      mensaje: 'Cobrado correctamente',
+      mesa: mesa || null,
+      numeroPedido: numeroPedido || null,
+      totalCobrado,
+      cantidadPedidos: pedidos.length,
+      metodoPago,
+      pedidos
+    })
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Error al cobrar' })
+  }
+}
+
+module.exports = {
+  crearPedido,
+  obtenerPedidos,
+  actualizarEstado,
+  obtenerPedidosPorMesa,
+  obtenerPedidoPorNumero,
+  cobrarMesa
+}

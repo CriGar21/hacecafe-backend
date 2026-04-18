@@ -100,5 +100,6 @@ enum EstadoPedido {
   EN_PREPARACION
   LISTO
   ENTREGADO
+  COBRADO
   CANCELADO
 }
