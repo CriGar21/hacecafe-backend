@@ -56,20 +56,23 @@ model Usuario {
 }
 
 model Pedido {
-  id           Int           @id @default(autoincrement())
-  numero       Int           @unique
-  usuarioId    Int
-  mesa         String?       @db.VarChar(20)
-  estado       EstadoPedido  @default(PENDIENTE)
-  total        Decimal       @db.Decimal(10, 2)
-  notas        String?       @db.Text
-  creadoEn     DateTime      @default(now())
-  actualizadoEn DateTime     @updatedAt
+  id            Int           @id @default(autoincrement())
+  numero        Int           @unique
+  usuarioId     Int
+  mesa          String?       @db.VarChar(20)
+  estado        EstadoPedido  @default(PENDIENTE)
+  cobrado       Boolean       @default(false)
+  metodoPago    String?       @db.VarChar(30)
+  total         Decimal       @db.Decimal(10, 2)
+  notas         String?       @db.Text
+  creadoEn      DateTime      @default(now())
+  actualizadoEn DateTime      @updatedAt
 
-  usuario      Usuario       @relation(fields: [usuarioId], references: [id])
-  items        ItemPedido[]
+  usuario       Usuario       @relation(fields: [usuarioId], references: [id])
+  items         ItemPedido[]
 
   @@index([estado])
+  @@index([cobrado])
   @@index([creadoEn])
   @@map("pedidos")
 }
@@ -96,6 +99,7 @@ enum Rol {
 }
 
 enum EstadoPedido {
+  ESPERANDO_APROBACION
   PENDIENTE
   EN_PREPARACION
   LISTO

@@ -4,6 +4,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const { PrismaClient } = require("@prisma/client");
 require("dotenv").config();
+const { verificarToken, soloRoles } = require("./middlewares/auth");
 
 const app = express();
 const server = http.createServer(app);
@@ -41,7 +42,12 @@ app.post("/pedidos/publico", async (req, res) => {
       }
       const subtotal = Number(producto.precio) * item.cantidad;
       total += subtotal;
-      itemsValidados.push({ producto, cantidad: item.cantidad, subtotal });
+      itemsValidados.push({
+        producto,
+        cantidad: item.cantidad,
+        subtotal,
+        notas: item.notas || null,
+      });
     }
 
     const ultimoPedido = await prisma.pedido.findFirst({
@@ -57,12 +63,14 @@ app.post("/pedidos/publico", async (req, res) => {
           mesa,
           notas,
           total,
+          estado: "ESPERANDO_APROBACION",
           items: {
             create: itemsValidados.map((i) => ({
               productoId: i.producto.id,
               cantidad: i.cantidad,
               precioUnit: i.producto.precio,
               subtotal: i.subtotal,
+              notas: i.notas || null,
             })),
           },
         },
@@ -80,7 +88,7 @@ app.post("/pedidos/publico", async (req, res) => {
     });
 
     console.log("Emitiendo a", io.engine.clientsCount, "clientes conectados");
-    io.emit("nuevo_pedido", pedido);
+    io.emit("solicitud_cliente", pedido);
 
     res.status(201).json(pedido);
   } catch (error) {
@@ -92,6 +100,35 @@ app.post("/pedidos/publico", async (req, res) => {
 // Rutas protegidas — DESPUÉS de la ruta pública
 app.use("/auth", require("./routes/auth"));
 app.use("/pedidos", require("./routes/pedidos"));
+app.use("/admin", require("./routes/admin"));
+
+app.get("/categorias/todas", verificarToken, async (req, res) => {
+  try {
+    const categorias = await prisma.categoria.findMany({
+      orderBy: { ordenDisplay: "asc" },
+    });
+    res.json(categorias);
+  } catch (error) {
+    res.status(500).json({ error: "Error" });
+  }
+});
+
+app.post(
+  "/categorias/nueva",
+  verificarToken,
+  soloRoles("DUEÑO", "EMPLEADO"),
+  async (req, res) => {
+    const { nombre, icono } = req.body;
+    try {
+      const categoria = await prisma.categoria.create({
+        data: { nombre, icono },
+      });
+      res.status(201).json(categoria);
+    } catch (error) {
+      res.status(500).json({ error: "Error al crear categoría" });
+    }
+  },
+);
 
 app.get("/productos", async (req, res) => {
   try {
