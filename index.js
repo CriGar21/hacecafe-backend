@@ -14,11 +14,16 @@ const PORT = process.env.PORT || 3001;
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://hacecafe-frontend.vercel.app",
+      process.env.FRONTEND_URL,
+    ].filter(Boolean),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true,
   }),
 );
+
 app.use(express.json());
 
 app.use((req, res, next) => {
