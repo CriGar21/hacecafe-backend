@@ -12,7 +12,13 @@ const io = new Server(server, { cors: { origin: "*" } });
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    credentials: true,
+  }),
+);
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -166,6 +172,6 @@ app.get("/", (req, res) => {
   res.json({ mensaje: "Servidor HaceCafe funcionando", version: "2.0" });
 });
 
-server.listen(PORT, () => {
-  console.log(`Servidor HaceCafe corriendo en http://localhost:${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor HaceCafe corriendo en puerto ${PORT}`);
 });
