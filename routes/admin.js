@@ -37,3 +37,21 @@ router.post("/categorias", crearCategoria);
 router.patch("/categorias/:id", actualizarCategoria);
 
 module.exports = router;
+
+router.put("/usuarios/:id", soloRoles("DUEÑO"), async (req, res) => {
+  const { nombre, rol, password } = req.body;
+  try {
+    const data = { nombre, rol };
+    if (password) {
+      const bcrypt = require("bcryptjs");
+      data.password = await bcrypt.hash(password, 10);
+    }
+    const usuario = await prisma.usuario.update({
+      where: { id: Number(req.params.id) },
+      data,
+    });
+    res.json(usuario);
+  } catch (e) {
+    res.status(500).json({ error: "Error al editar usuario" });
+  }
+});
