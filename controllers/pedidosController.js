@@ -283,7 +283,11 @@ const cobrarMesa = async (req, res) => {
             cobrado: true,
             metodoPago: metodoPago || "EFECTIVO",
             // Solo marca COBRADO si ya fue entregado, sino mantiene su estado
-            estado: "COBRADO",
+            estado: ["PENDIENTE", "EN_PREPARACION", "LISTO"].includes(
+              pedido.estado,
+            )
+              ? pedido.estado // mantener el estado actual para que cocina lo siga viendo
+              : "COBRADO",
           },
         });
       }
