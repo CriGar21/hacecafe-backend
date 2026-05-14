@@ -6,26 +6,37 @@ const prisma = new PrismaClient();
 
 const getDashboard = async (req, res) => {
   try {
-    const { fecha, productoId } = req.query;
-    const dia = fecha ? new Date(fecha + "T00:00:00") : new Date();
-    dia.setHours(0, 0, 0, 0);
-    const diaSiguiente = new Date(dia);
-    diaSiguiente.setDate(diaSiguiente.getDate() + 1);
+    const { fecha, desde, hasta, productoId } = req.query;
 
-    const pedidosDelDia = await prisma.pedido.findMany({
+    // Soporta tanto ?fecha=YYYY-MM-DD (un día) como ?desde=...&hasta=... (rango)
+    let fechaDesde, fechaHasta;
+
+    if (desde && hasta) {
+      fechaDesde = new Date(desde + "T00:00:00");
+      fechaHasta = new Date(hasta + "T23:59:59");
+    } else {
+      // compatibilidad con el parámetro ?fecha= anterior
+      const dia = fecha ? new Date(fecha + "T00:00:00") : new Date();
+      dia.setHours(0, 0, 0, 0);
+      fechaDesde = dia;
+      fechaHasta = new Date(dia);
+      fechaHasta.setHours(23, 59, 59, 999);
+    }
+
+    const pedidosDelPeriodo = await prisma.pedido.findMany({
       where: {
         cobrado: true,
-        actualizadoEn: { gte: dia, lt: diaSiguiente },
+        actualizadoEn: { gte: fechaDesde, lte: fechaHasta },
       },
       include: { items: { include: { producto: true } } },
     });
 
     // Filtrar por producto si se especifica
     const pedidosFiltrados = productoId
-      ? pedidosDelDia.filter((p) =>
+      ? pedidosDelPeriodo.filter((p) =>
           p.items.some((i) => i.productoId === Number(productoId)),
         )
-      : pedidosDelDia;
+      : pedidosDelPeriodo;
 
     const totalDia = pedidosFiltrados.reduce(
       (acc, p) => acc + Number(p.total),
@@ -42,9 +53,9 @@ const getDashboard = async (req, res) => {
       });
     });
 
-    const itemsDelDia = pedidosFiltrados.flatMap((p) => p.items);
+    const itemsDelPeriodo = pedidosFiltrados.flatMap((p) => p.items);
     const productosMap = {};
-    itemsDelDia.forEach((item) => {
+    itemsDelPeriodo.forEach((item) => {
       const nombre = item.producto.nombre;
       const precioCosto = Number(item.producto.precioCosto || 0);
       if (!productosMap[nombre])
@@ -58,6 +69,7 @@ const getDashboard = async (req, res) => {
       .sort((a, b) => b.cantidad - a.cantidad)
       .slice(0, 5);
 
+    // Ventas por hora — útil para 1 día; para rangos muestra el acumulado por hora del día
     const ventasPorHora = Array(24)
       .fill(0)
       .map((_, hora) => ({ hora, total: 0, pedidos: 0 }));
@@ -87,7 +99,8 @@ const getDashboard = async (req, res) => {
       topProductos,
       ventasPorHora: ventasPorHora.filter((v) => v.pedidos > 0),
       stockBajo,
-      fecha: dia,
+      fechaDesde,
+      fechaHasta,
     });
   } catch (error) {
     console.error(error);
@@ -187,7 +200,6 @@ const editarProducto = async (req, res) => {
 const actualizarStock = async (req, res) => {
   const { id } = req.params;
   const { cantidad, operacion } = req.body;
-  // operacion: 'agregar' | 'establecer'
   try {
     const producto = await prisma.producto.update({
       where: { id: Number(id) },
@@ -199,7 +211,6 @@ const actualizarStock = async (req, res) => {
       },
     });
 
-    // Emitir alerta si quedó bajo el mínimo
     if (producto.stockActual <= producto.stockMinimo) {
       req.io.emit("stock_bajo", {
         id: producto.id,
@@ -250,6 +261,23 @@ const crearUsuario = async (req, res) => {
     res.status(201).json(usuario);
   } catch (error) {
     res.status(500).json({ error: "Error al crear usuario" });
+  }
+};
+
+const editarUsuario = async (req, res) => {
+  const { id } = req.params;
+  const { nombre, rol, password } = req.body;
+  try {
+    const data = { nombre, rol };
+    if (password) data.password = await bcrypt.hash(password, 10);
+    const usuario = await prisma.usuario.update({
+      where: { id: Number(id) },
+      data,
+      select: { id: true, nombre: true, email: true, rol: true, activo: true },
+    });
+    res.json(usuario);
+  } catch (error) {
+    res.status(500).json({ error: "Error al editar usuario" });
   }
 };
 
@@ -312,7 +340,6 @@ const getCaja = async (req, res) => {
 
     const total = pedidosFiltrados.reduce((acc, p) => acc + Number(p.total), 0);
 
-    // Resumen por vendedor
     const porVendedor = {};
     pedidosFiltrados.forEach((p) => {
       const nombre = p.usuario?.nombre || "Sistema";
@@ -322,7 +349,6 @@ const getCaja = async (req, res) => {
       porVendedor[nombre].total += Number(p.total);
     });
 
-    // Resumen por método de pago
     const porMetodoPago = {};
     pedidosFiltrados.forEach((p) => {
       const metodo = p.metodoPago || "EFECTIVO";
@@ -379,14 +405,8 @@ const actualizarCategoria = async (req, res) => {
     const data = {};
     if (nombre !== undefined) data.nombre = nombre;
     if (icono !== undefined) data.icono = icono;
-    if (activa !== undefined) data.activo = activa;
+    if (activa !== undefined) data.activa = activa;
     if (ordenDisplay !== undefined) data.ordenDisplay = Number(ordenDisplay);
-
-    // activa es el campo correcto en el schema
-    if (activa !== undefined) {
-      delete data.activo;
-      data.activa = activa;
-    }
 
     const categoria = await prisma.categoria.update({
       where: { id: Number(id) },
@@ -407,6 +427,7 @@ module.exports = {
   actualizarStock,
   getUsuarios,
   crearUsuario,
+  editarUsuario,
   toggleUsuario,
   getCaja,
   getCategorias,
