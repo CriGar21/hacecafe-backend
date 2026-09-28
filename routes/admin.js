@@ -18,7 +18,7 @@ const {
 } = require("../controllers/adminController");
 
 router.use(verificarToken);
-router.use(soloRoles("DUENO"));
+router.use(soloRoles("DUEÑO"));
 
 // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get("/dashboard", getDashboard);
@@ -44,5 +44,6 @@ router.post("/categorias", crearCategoria);
 router.patch("/categorias/:id", actualizarCategoria);
 
 module.exports = router;
+
 
 
