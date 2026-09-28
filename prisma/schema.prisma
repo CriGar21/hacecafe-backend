@@ -93,7 +93,7 @@ model ItemPedido {
 }
 
 enum Rol {
-  DUEÑO
+  DUENO @map("DUEÑO")
   EMPLEADO
   COCINA
 }

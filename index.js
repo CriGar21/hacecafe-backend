@@ -31,7 +31,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Ruta pública — ANTES del router de pedidos protegido
+// Ruta publica - ANTES del router de pedidos protegido
 app.post("/pedidos/publico", async (req, res) => {
   const { mesa, items, notas } = req.body;
 
@@ -108,7 +108,7 @@ app.post("/pedidos/publico", async (req, res) => {
   }
 });
 
-// Rutas protegidas — DESPUÉS de la ruta pública
+// Rutas protegidas - DESPUÃ‰S de la ruta publica
 app.use("/auth", require("./routes/auth"));
 app.use("/pedidos", require("./routes/pedidos"));
 app.use("/admin", require("./routes/admin"));
@@ -127,7 +127,7 @@ app.get("/categorias/todas", verificarToken, async (req, res) => {
 app.post(
   "/categorias/nueva",
   verificarToken,
-  soloRoles("DUEÑO", "EMPLEADO"),
+  soloRoles("DUENO", "EMPLEADO"),
   async (req, res) => {
     const { nombre, icono } = req.body;
     try {
@@ -136,7 +136,7 @@ app.post(
       });
       res.status(201).json(categoria);
     } catch (error) {
-      res.status(500).json({ error: "Error al crear categoría" });
+      res.status(500).json({ error: "Error al crear categorÃ­a" });
     }
   },
 );
@@ -162,7 +162,7 @@ app.get("/categorias", async (req, res) => {
     });
     res.json(categorias);
   } catch (error) {
-    res.status(500).json({ error: "Error al obtener categorías" });
+    res.status(500).json({ error: "Error al obtener categorÃ­as" });
   }
 });
 
@@ -180,3 +180,5 @@ app.get("/", (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor HaceCafe corriendo en puerto ${PORT}`);
 });
+
+

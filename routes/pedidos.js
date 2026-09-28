@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const {
   crearPedido,
@@ -21,8 +21,10 @@ router.get("/", obtenerPedidos);
 router.patch("/:id/estado", actualizarEstado);
 router.get("/mesa/:mesa", obtenerPedidosPorMesa);
 router.get("/numero/:numero", obtenerPedidoPorNumero);
-router.post("/cobrar", soloRoles("DUEÑO", "EMPLEADO"), cobrarMesa);
-router.patch("/:id/aprobar", soloRoles("DUEÑO", "EMPLEADO"), aprobarPedido);
-router.patch("/:id/rechazar", soloRoles("DUEÑO", "EMPLEADO"), rechazarPedido);
+router.post("/cobrar", soloRoles("DUENO", "EMPLEADO"), cobrarMesa);
+router.patch("/:id/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarPedido);
+router.patch("/:id/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarPedido);
 
 module.exports = router;
+
+
