@@ -33,7 +33,17 @@ const login = async (req, res) => {
 
   try {
     const usuario = await prisma.usuario.findUnique({ where: { email } });
-    if (!usuario || !usuario.activo) {
+
+console.log(
+  "LOGIN:",
+  email,
+  "USUARIO:",
+  !!usuario,
+  "ACTIVO:",
+  usuario?.activo
+);
+
+if (!usuario || !usuario.activo) {
       return res.status(401).json({ error: "Credenciales incorrectas" });
     }
 
