@@ -1,6 +1,16 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
+const descontarStock = async (tx, item) => {
+  const resultado = await tx.producto.updateMany({
+    where: { id: item.producto.id, disponible: true, stockActual: { gte: item.cantidad } },
+    data: { stockActual: { decrement: item.cantidad } },
+  });
+  if (resultado.count !== 1) {
+    throw new Error(`Stock insuficiente de ${item.producto.nombre}`);
+  }
+};
+
 const crearPedidoPublico = async (req, res) => {
   const { mesa, items, notas } = req.body;
   try {
@@ -36,16 +46,15 @@ const crearPedidoPublico = async (req, res) => {
         },
         include: { items: { include: { producto: true } } },
       });
-      for (const item of itemsValidados) {
-        await tx.producto.update({ where: { id: item.producto.id }, data: { stockActual: { decrement: item.cantidad } } });
-      }
+      for (const item of itemsValidados) await descontarStock(tx, item);
       return nuevoPedido;
     });
     req.io.emit("solicitud_cliente", pedido);
     res.status(201).json(pedido);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Error al crear pedido" });
+    const mensaje = error.message?.startsWith("Stock insuficiente") ? error.message : "Error al crear pedido";
+    res.status(500).json({ error: mensaje });
   }
 };
 
@@ -73,12 +82,16 @@ const crearPedido = async (req, res) => {
         data: { numero, usuarioId, mesa, notas: notas || null, total, items: { create: itemsValidados.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) } },
         include: { items: { include: { producto: true } }, usuario: true },
       });
-      for (const item of itemsValidados) await tx.producto.update({ where: { id: item.producto.id }, data: { stockActual: { decrement: item.cantidad } } });
+      for (const item of itemsValidados) await descontarStock(tx, item);
       return nuevoPedido;
     });
     req.io.emit("nuevo_pedido", pedido);
     res.status(201).json(pedido);
-  } catch (error) { console.error(error); res.status(500).json({ error: "Error al crear pedido" }); }
+  } catch (error) {
+    console.error(error);
+    const mensaje = error.message?.startsWith("Stock insuficiente") ? error.message : "Error al crear pedido";
+    res.status(500).json({ error: mensaje });
+  }
 };
 
 const obtenerPedidos = async (req, res) => {
