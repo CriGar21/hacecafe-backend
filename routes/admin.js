@@ -18,6 +18,8 @@ const {
 } = require("../controllers/adminController");
 
 router.use(verificarToken);
+// La consulta de tickets es de solo lectura y está disponible para todo usuario autenticado.
+router.get("/caja", getCaja);
 router.use(soloRoles("DUEÑO"));
 
 // â”€â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
