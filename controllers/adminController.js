@@ -324,7 +324,7 @@ const getCaja = async (req, res) => {
       where: {
         cobrado: true,
         ...(!mesa ? { actualizadoEn: { gte: fechaDesde, lte: fechaHasta } } : {}),
-        ...(mesa ? { mesa: { equals: String(mesa).trim(), mode: "insensitive" } } : {}),
+        ...(mesa ? { mesa: String(mesa).trim() } : {}),
       },
       include: {
         items: { include: { producto: true } },
