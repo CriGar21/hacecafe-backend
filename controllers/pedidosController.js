@@ -174,4 +174,45 @@ const aprobarModificacion = async (req, res) => {
 };
 const rechazarModificacion = async (req, res) => { try { const r = await prisma.pedido.update({ where: { id: Number(req.params.id) }, data: { solicitudModificacion: null }, include: completo }); req.io.emit("pedido_actualizado", r); res.json(r); } catch { res.status(400).json({ error: "No se pudo rechazar la modificación" }); } };
 
-module.exports = { crearPedido, crearPedidoPublico, obtenerPedidos, actualizarEstado, obtenerPedidosPorMesa, obtenerPedidoPorNumero, cobrarMesa, aprobarPedido, rechazarPedido, modificarPedidoPublico, cancelarPedidoPublico, aprobarCancelacion, rechazarCancelacion, aprobarModificacion, rechazarModificacion };
+
+const editarPedidoPendiente = async (req, res) => {
+  const id = Number(req.params.id);
+  const items = req.body?.items;
+  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "El pedido debe tener al menos un producto" });
+  try {
+    const pedido = await prisma.$transaction(async tx => {
+      const actual = await tx.pedido.findUnique({ where: { id }, include: { items: true } });
+      if (!actual) throw new Error("Pedido no encontrado");
+      if (actual.estado !== "ESPERANDO_APROBACION") throw new Error("Solo se pueden editar pedidos antes de aceptarlos");
+      const val = []; let total = 0;
+      for (const item of items) {
+        const cantidad = Number(item.cantidad);
+        const producto = await tx.producto.findUnique({ where: { id: Number(item.productoId) } });
+        if (!producto || !producto.disponible || !Number.isInteger(cantidad) || cantidad <= 0) throw new Error("Producto o cantidad inválida");
+        const anterior = actual.items.filter(x => x.productoId === producto.id).reduce((sum, x) => sum + x.cantidad, 0);
+        if (producto.stockActual + anterior < cantidad) throw new Error(`Stock insuficiente de ${producto.nombre}`);
+        const subtotal = Number(producto.precio) * cantidad;
+        total += subtotal; val.push({ producto, cantidad, subtotal, notas: item.notas || null });
+      }
+      for (const old of actual.items) await tx.producto.update({ where: { id: old.productoId }, data: { stockActual: { increment: old.cantidad } } });
+      for (const item of val) await stock(tx, item.producto.id, item.cantidad);
+      await tx.itemPedido.deleteMany({ where: { pedidoId: id } });
+      return tx.pedido.update({
+        where: { id },
+        data: {
+          total,
+          notas: req.body.notas ?? actual.notas,
+          estado: "PENDIENTE",
+          items: { create: val.map(i => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) },
+        },
+        include: completo,
+      });
+    });
+    req.io.emit("pedido_aprobado", pedido);
+    req.io.emit("pedido_actualizado", pedido);
+    req.io.emit("nuevo_pedido", pedido);
+    res.json(pedido);
+  } catch (e) { res.status(400).json({ error: e.message || "No se pudo editar el pedido" }); }
+};
+
+module.exports = { editarPedidoPendiente, crearPedido, crearPedidoPublico, obtenerPedidos, actualizarEstado, obtenerPedidosPorMesa, obtenerPedidoPorNumero, cobrarMesa, aprobarPedido, rechazarPedido, modificarPedidoPublico, cancelarPedidoPublico, aprobarCancelacion, rechazarCancelacion, aprobarModificacion, rechazarModificacion };
