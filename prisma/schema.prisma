@@ -63,9 +63,17 @@ model Pedido {
   estado                EstadoPedido  @default(PENDIENTE)
   cobrado               Boolean       @default(false)
   metodoPago            String?       @db.VarChar(30)
+  subtotal              Decimal       @default(0) @db.Decimal(10, 2)
+  descuentoPorcentaje   Decimal       @default(0) @db.Decimal(5, 2)
+  descuentoMonto        Decimal       @default(0) @db.Decimal(10, 2)
+  descuentoMotivo       String?       @db.VarChar(160)
+  descuentoOrigen       String?       @db.VarChar(30)
+  descuentoCodigo       String?       @db.VarChar(80)
   total                 Decimal       @db.Decimal(10, 2)
   notas                 String?       @db.Text
   clienteToken          String?       @unique @db.VarChar(80)
+  juegoJugado           Boolean       @default(false)
+  juegoPremio           Decimal       @default(0) @db.Decimal(5, 2)
   solicitudCancelacion  Boolean       @default(false)
   solicitudModificacion Json?
   creadoEn              DateTime      @default(now())
@@ -93,6 +101,34 @@ model ItemPedido {
   producto    Producto @relation(fields: [productoId], references: [id])
 
   @@map("items_pedido")
+}
+
+model Promocion {
+  id            Int      @id @default(autoincrement())
+  nombre        String   @db.VarChar(120)
+  descripcion   String?  @db.Text
+  imagenUrl     String?  @db.VarChar(300)
+  tipo          String   @default("DESCUENTO") @db.VarChar(30)
+  valor         Decimal  @default(0) @db.Decimal(10, 2)
+  activa        Boolean  @default(true)
+  mostrarMenu   Boolean  @default(true)
+  desde         DateTime?
+  hasta         DateTime?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([activa, mostrarMenu])
+  @@map("promociones")
+}
+
+model JuegoConfig {
+  id          Int      @id @default(1)
+  activo      Boolean  @default(false)
+  nombre      String   @default("Ruleta de descuentos") @db.VarChar(100)
+  premios     Json
+  actualizadoEn DateTime @updatedAt
+
+  @@map("juegos_config")
 }
 
 enum Rol {
