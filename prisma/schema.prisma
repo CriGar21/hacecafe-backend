@@ -35,7 +35,7 @@ model Producto {
   actualizadoEn      DateTime  @updatedAt
 
   categoria          Categoria @relation(fields: [categoriaId], references: [id])
-  items    ItemPedido[]
+  items              ItemPedido[]
 
   @@index([disponible])
   @@index([categoriaId])
@@ -56,17 +56,20 @@ model Usuario {
 }
 
 model Pedido {
-  id            Int           @id @default(autoincrement())
-  numero        Int           @unique
-  usuarioId     Int
-  mesa          String?       @db.VarChar(20)
-  estado        EstadoPedido  @default(PENDIENTE)
-  cobrado       Boolean       @default(false)
-  metodoPago    String?       @db.VarChar(30)
-  total         Decimal       @db.Decimal(10, 2)
-  notas         String?       @db.Text
-  creadoEn      DateTime      @default(now())
-  actualizadoEn DateTime      @updatedAt
+  id                    Int           @id @default(autoincrement())
+  numero                Int           @unique
+  usuarioId             Int
+  mesa                  String?       @db.VarChar(20)
+  estado                EstadoPedido  @default(PENDIENTE)
+  cobrado               Boolean       @default(false)
+  metodoPago            String?       @db.VarChar(30)
+  total                 Decimal       @db.Decimal(10, 2)
+  notas                 String?       @db.Text
+  clienteToken          String?       @unique @db.VarChar(80)
+  solicitudCancelacion  Boolean       @default(false)
+  solicitudModificacion Json?
+  creadoEn              DateTime      @default(now())
+  actualizadoEn         DateTime      @updatedAt
 
   usuario       Usuario       @relation(fields: [usuarioId], references: [id])
   items         ItemPedido[]
