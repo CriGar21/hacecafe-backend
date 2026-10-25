@@ -12,10 +12,10 @@ const {
   rechazarPedido,
   modificarPedidoPublico,
   cancelarPedidoPublico,
-  aprobarCancelacionPublica,
-  rechazarCancelacionPublica,
-  aprobarModificacionPublica,
-  rechazarModificacionPublica,
+  aprobarCancelacion,
+  rechazarCancelacion,
+  aprobarModificacion,
+  rechazarModificacion,
 } = require("../controllers/pedidosController");
 const { verificarToken, soloRoles } = require("../middlewares/auth");
 
@@ -32,9 +32,9 @@ router.get("/numero/:numero", obtenerPedidoPorNumero);
 router.post("/cobrar", soloRoles("DUENO", "EMPLEADO"), cobrarMesa);
 router.patch("/:id/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarPedido);
 router.patch("/:id/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarPedido);
-router.patch("/:id/cancelacion/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarCancelacionPublica);
-router.patch("/:id/cancelacion/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarCancelacionPublica);
-router.patch("/:id/modificacion/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarModificacionPublica);
-router.patch("/:id/modificacion/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarModificacionPublica);
+router.patch("/:id/cancelacion/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarCancelacion);
+router.patch("/:id/cancelacion/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarCancelacion);
+router.patch("/:id/modificacion/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarModificacion);
+router.patch("/:id/modificacion/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarModificacion);
 
 module.exports = router;
