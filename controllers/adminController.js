@@ -302,7 +302,7 @@ const toggleUsuario = async (req, res) => {
 
 const getCaja = async (req, res) => {
   try {
-    const { desde, hasta, productoId } = req.query;
+    const { desde, hasta, productoId, mesa } = req.query;
 
     const fechaDesde = desde
       ? new Date(desde + "T00:00:00")
@@ -332,11 +332,11 @@ const getCaja = async (req, res) => {
       orderBy: { actualizadoEn: "desc" },
     });
 
-    const pedidosFiltrados = productoId
-      ? pedidos.filter((p) =>
-          p.items.some((i) => i.productoId === Number(productoId)),
-        )
-      : pedidos;
+    const pedidosFiltrados = pedidos.filter((p) => {
+      if (productoId && !p.items.some((i) => i.productoId === Number(productoId))) return false;
+      if (mesa && String(p.mesa ?? "").trim().toLowerCase() !== String(mesa).trim().toLowerCase()) return false;
+      return true;
+    });
 
     const total = pedidosFiltrados.reduce((acc, p) => acc + Number(p.total), 0);
 
