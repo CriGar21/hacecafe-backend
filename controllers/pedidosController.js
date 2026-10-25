@@ -115,7 +115,16 @@ const modificarPedidoPublico = async (req, res) => {
       for (const old of a.items) await tx.producto.update({ where: { id: old.productoId }, data: { stockActual: { increment: old.cantidad } } });
       for (const i of val) await stock(tx, i.prod.id, i.cantidad);
       await tx.itemPedido.deleteMany({ where: { pedidoId: a.id } });
-      return tx.pedido.update({ where: { id: a.id }, data: { total, notas: req.body.notas ?? a.notas, solicitudModificacion: null }, include: completo });
+      return tx.pedido.update({
+        where: { id: a.id },
+        data: {
+          total,
+          notas: req.body.notas ?? a.notas,
+          solicitudModificacion: null,
+          items: { create: val.map(i => ({ productoId: i.prod.id, cantidad: i.cantidad, precioUnit: i.prod.precio, subtotal: i.subtotal, notas: i.notas })) },
+        },
+        include: completo,
+      });
     });
     const solicitud = p.estado === "PENDIENTE"; req.io.emit(solicitud ? "solicitud_modificacion" : "pedido_modificado", r); res.status(solicitud ? 202 : 200).json({ ...r, mensaje: solicitud ? "La modificación quedó pendiente de aprobación" : "Pedido modificado correctamente" });
   } catch (e) { res.status(400).json({ error: e.message || "No se pudo modificar el pedido" }); }
@@ -147,7 +156,19 @@ const aprobarModificacion = async (req, res) => {
     const r = await prisma.$transaction(async tx => {
       const a = await tx.pedido.findUnique({ where: { id: p.id }, include: { items: true } }); const val = []; let total = 0;
       for (const i of items) { const cantidad = Number(i.cantidad); const prod = await tx.producto.findUnique({ where: { id: Number(i.productoId) } }); if (!prod || !prod.disponible || !Number.isInteger(cantidad) || cantidad <= 0) throw new Error("Producto o cantidad inválida"); const anterior = a.items.filter(x => x.productoId === prod.id).reduce((z, x) => z + x.cantidad, 0); if (prod.stockActual + anterior < cantidad) throw new Error(`Stock insuficiente de ${prod.nombre}`); const subtotal = Number(prod.precio) * cantidad; total += subtotal; val.push({ prod, cantidad, subtotal, notas: i.notas || null }); }
-      for (const old of a.items) await tx.producto.update({ where: { id: old.productoId }, data: { stockActual: { increment: old.cantidad } } }); for (const i of val) await stock(tx, i.prod.id, i.cantidad); await tx.itemPedido.deleteMany({ where: { pedidoId: a.id } }); return tx.pedido.update({ where: { id: a.id }, data: { total, notas: s.notas ?? a.notas, solicitudModificacion: null }, include: completo });
+      for (const old of a.items) await tx.producto.update({ where: { id: old.productoId }, data: { stockActual: { increment: old.cantidad } } });
+      for (const i of val) await stock(tx, i.prod.id, i.cantidad);
+      await tx.itemPedido.deleteMany({ where: { pedidoId: a.id } });
+      return tx.pedido.update({
+        where: { id: a.id },
+        data: {
+          total,
+          notas: s.notas ?? a.notas,
+          solicitudModificacion: null,
+          items: { create: val.map(i => ({ productoId: i.prod.id, cantidad: i.cantidad, precioUnit: i.prod.precio, subtotal: i.subtotal, notas: i.notas })) },
+        },
+        include: completo,
+      });
     }); req.io.emit("pedido_modificado", r); res.json(r);
   } catch (e) { res.status(400).json({ error: e.message || "No se pudo aprobar la modificación" }); }
 };
