@@ -323,7 +323,8 @@ const getCaja = async (req, res) => {
     const pedidos = await prisma.pedido.findMany({
       where: {
         cobrado: true,
-        actualizadoEn: { gte: fechaDesde, lte: fechaHasta },
+        ...(!mesa ? { actualizadoEn: { gte: fechaDesde, lte: fechaHasta } } : {}),
+        ...(mesa ? { mesa: { equals: String(mesa).trim(), mode: "insensitive" } } : {}),
       },
       include: {
         items: { include: { producto: true } },
