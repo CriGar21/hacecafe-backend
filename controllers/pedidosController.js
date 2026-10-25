@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
@@ -6,9 +7,7 @@ const descontarStock = async (tx, item) => {
     where: { id: item.producto.id, disponible: true, stockActual: { gte: item.cantidad } },
     data: { stockActual: { decrement: item.cantidad } },
   });
-  if (resultado.count !== 1) {
-    throw new Error(`Stock insuficiente de ${item.producto.nombre}`);
-  }
+  if (resultado.count !== 1) throw new Error(`Stock insuficiente de ${item.producto.nombre}`);
 };
 
 const usuarioSistema = async (tx) => {
@@ -17,12 +16,17 @@ const usuarioSistema = async (tx) => {
   return usuario.id;
 };
 
+const crearTokenCliente = () => crypto.randomBytes(30).toString("hex");
+
+const cargarPedidoCompleto = (tx, id) => tx.pedido.findUnique({
+  where: { id },
+  include: { items: { include: { producto: true } }, usuario: true },
+});
+
 const crearPedidoPublico = async (req, res) => {
   const { mesa, items, notas } = req.body;
   try {
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "El pedido debe contener al menos un producto" });
-    }
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "El pedido debe contener al menos un producto" });
     let total = 0;
     const itemsValidados = [];
     for (const item of items) {
@@ -37,15 +41,12 @@ const crearPedidoPublico = async (req, res) => {
     }
     const ultimoPedido = await prisma.pedido.findFirst({ orderBy: { numero: "desc" } });
     const numero = (ultimoPedido?.numero || 0) + 1;
+    const clienteToken = crearTokenCliente();
     const pedido = await prisma.$transaction(async (tx) => {
       const usuarioId = await usuarioSistema(tx);
       const nuevoPedido = await tx.pedido.create({
         data: {
-          numero,
-          usuarioId,
-          mesa,
-          notas: notas || null,
-          total,
+          numero, usuarioId, mesa, notas: notas || null, total, clienteToken,
           estado: "ESPERANDO_APROBACION",
           items: { create: itemsValidados.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) },
         },
@@ -83,10 +84,7 @@ const crearPedido = async (req, res) => {
     const ultimoPedido = await prisma.pedido.findFirst({ orderBy: { numero: "desc" } });
     const numero = (ultimoPedido?.numero || 0) + 1;
     const pedido = await prisma.$transaction(async (tx) => {
-      const nuevoPedido = await tx.pedido.create({
-        data: { numero, usuarioId, mesa, notas: notas || null, total, items: { create: itemsValidados.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) } },
-        include: { items: { include: { producto: true } }, usuario: true },
-      });
+      const nuevoPedido = await tx.pedido.create({ data: { numero, usuarioId, mesa, notas: notas || null, total, items: { create: itemsValidados.map((i) => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) } }, include: { items: { include: { producto: true } }, usuario: true } });
       for (const item of itemsValidados) await descontarStock(tx, item);
       return nuevoPedido;
     });
@@ -118,7 +116,7 @@ const actualizarEstado = async (req, res) => {
       if (actual.estado !== "CANCELADO" && estado === "CANCELADO") {
         for (const item of actual.items) await tx.producto.update({ where: { id: item.productoId }, data: { stockActual: { increment: item.cantidad } } });
       }
-      return tx.pedido.update({ where: { id: actual.id }, data: { estado }, include: { items: { include: { producto: true } } } });
+      return tx.pedido.update({ where: { id: actual.id }, data: { estado, solicitudCancelacion: false }, include: { items: { include: { producto: true } } } });
     });
     req.io.emit("pedido_actualizado", pedido); res.json(pedido);
   } catch (error) { res.status(500).json({ error: error.message === "Pedido no encontrado" ? error.message : "Error al actualizar pedido" }); }
@@ -133,7 +131,7 @@ const obtenerPedidosPorMesa = async (req, res) => {
 
 const aprobarPedido = async (req, res) => {
   try {
-    const pedido = await prisma.pedido.update({ where: { id: Number(req.params.id) }, data: { estado: "PENDIENTE" }, include: { items: { include: { producto: true } }, usuario: true } });
+    const pedido = await prisma.pedido.update({ where: { id: Number(req.params.id) }, data: { estado: "PENDIENTE", solicitudCancelacion: false, solicitudModificacion: null }, include: { items: { include: { producto: true } }, usuario: true } });
     req.io.emit("pedido_aprobado", pedido); req.io.emit("nuevo_pedido", pedido); res.json(pedido);
   } catch (error) { res.status(500).json({ error: "Error al aprobar pedido" }); }
 };
@@ -145,8 +143,8 @@ const rechazarPedido = async (req, res) => {
       const actual = await tx.pedido.findUnique({ where: { id: Number(req.params.id) }, include: { items: true } });
       if (!actual) throw new Error("Pedido no encontrado");
       if (actual.estado === "CANCELADO") return actual;
-      const actualizado = await tx.pedido.update({ where: { id: actual.id }, data: { estado: "CANCELADO" }, include: { items: true } });
-      for (const item of actual.items) await tx.producto.update({ where: { id: item.productoId }, data: { stockActual: { increment: item.cantidad } } });
+      const actualizado = await tx.pedido.update({ where: { id: actual.id }, data: { estado: "CANCELADO", solicitudCancelacion: false, solicitudModificacion: null }, include: { items: true } });
+      for (const item of actual.items) await tx.producto.update({ where: { id: item.productoId }, data: { stockActual: { increment: item.cantidad } });
       return actualizado;
     });
     req.io.emit("pedido_rechazado", { pedidoId: pedido.id, motivo }); res.json(pedido);
@@ -182,4 +180,134 @@ const cobrarMesa = async (req, res) => {
   } catch (error) { console.error(error); res.status(500).json({ error: "Error al cobrar" }); }
 };
 
-module.exports = { crearPedido, crearPedidoPublico, obtenerPedidos, actualizarEstado, obtenerPedidosPorMesa, obtenerPedidoPorNumero, cobrarMesa, aprobarPedido, rechazarPedido };
+const validarCliente = async (id, token) => {
+  if (!token) return null;
+  return prisma.pedido.findFirst({ where: { id: Number(id), clienteToken: token, cobrado: false }, include: { items: { include: { producto: true } } } });
+};
+
+const modificarPedidoPublico = async (req, res) => {
+  const pedido = await validarCliente(req.params.id, req.body?.token);
+  if (!pedido) return res.status(403).json({ error: "No autorizado para modificar este pedido" });
+  if (!["ESPERANDO_APROBACION", "PENDIENTE"].includes(pedido.estado)) return res.status(409).json({ error: "El pedido ya no puede modificarse en este estado" });
+  const nuevosItems = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!nuevosItems.length) return res.status(400).json({ error: "El pedido debe contener al menos un producto" });
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      const actual = await tx.pedido.findUnique({ where: { id: pedido.id }, include: { items: true } });
+      if (!actual || actual.clienteToken !== req.body.token || actual.cobrado) throw new Error("No autorizado");
+      const validados = [];
+      let total = 0;
+      for (const item of nuevosItems) {
+        const cantidad = Number(item.cantidad);
+        if (!Number.isInteger(cantidad) || cantidad <= 0) throw new Error("Cantidad inválida");
+        const producto = await tx.producto.findUnique({ where: { id: Number(item.productoId) } });
+        if (!producto || !producto.disponible) throw new Error("Producto no disponible");
+        const anterior = actual.items.filter((x) => x.productoId === producto.id).reduce((a, x) => a + x.cantidad, 0);
+        const nuevaTotalProducto = cantidad;
+        if (producto.stockActual + anterior < nuevaTotalProducto) throw new Error(`Stock insuficiente de ${producto.nombre}`);
+        const subtotal = Number(producto.precio) * cantidad;
+        total += subtotal;
+        validados.push({ producto, cantidad, subtotal, notas: item.notas || null });
+      }
+      if (actual.estado === "PENDIENTE") {
+        const solicitud = { items: nuevosItems, notas: req.body.notas ?? actual.notas ?? null, total, creadoEn: new Date().toISOString() };
+        return tx.pedido.update({ where: { id: actual.id }, data: { solicitudModificacion: solicitud }, include: { items: { include: { producto: true } } } });
+      }
+      for (const viejo of actual.items) await tx.producto.update({ where: { id: viejo.productoId }, data: { stockActual: { increment: viejo.cantidad } } });
+      for (const item of validados) await descontarStock(tx, item);
+      await tx.itemPedido.deleteMany({ where: { pedidoId: actual.id } });
+      return tx.pedido.update({ where: { id: actual.id }, data: { total, notas: req.body.notas ?? actual.notas, solicitudModificacion: null }, include: { items: { include: { producto: true } } } });
+    });
+    const esSolicitud = pedido.estado === "PENDIENTE";
+    req.io.emit(esSolicitud ? "solicitud_modificacion" : "pedido_modificado", resultado);
+    res.status(esSolicitud ? 202 : 200).json({ ...resultado, mensaje: esSolicitud ? "La modificación quedó pendiente de aprobación" : "Pedido modificado correctamente" });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "No se pudo modificar el pedido" });
+  }
+};
+
+const cancelarPedidoPublico = async (req, res) => {
+  const pedido = await validarCliente(req.params.id, req.body?.token);
+  if (!pedido) return res.status(403).json({ error: "No autorizado para cancelar este pedido" });
+  if (!["ESPERANDO_APROBACION", "PENDIENTE", "EN_PREPARACION"].includes(pedido.estado)) return res.status(409).json({ error: "El pedido ya no puede cancelarse en este estado" });
+  try {
+    if (pedido.estado === "ESPERANDO_APROBACION") {
+      const cancelado = await prisma.$transaction(async (tx) => {
+        const actual = await tx.pedido.findUnique({ where: { id: pedido.id }, include: { items: true } });
+        if (!actual || actual.clienteToken !== req.body.token || actual.cobrado) throw new Error("No autorizado");
+        const result = await tx.pedido.update({ where: { id: actual.id }, data: { estado: "CANCELADO", solicitudCancelacion: false }, include: { items: { include: { producto: true } } } });
+        for (const item of actual.items) await tx.producto.update({ where: { id: item.productoId }, data: { stockActual: { increment: item.cantidad } } });
+        return result;
+      });
+      req.io.emit("pedido_rechazado", { pedidoId: cancelado.id, motivo: "Cancelado por el cliente" });
+      return res.json({ ...cancelado, mensaje: "Pedido cancelado" });
+    }
+    const solicitud = await prisma.pedido.update({ where: { id: pedido.id }, data: { solicitudCancelacion: true }, include: { items: { include: { producto: true } } } });
+    req.io.emit("solicitud_cancelacion", solicitud);
+    res.status(202).json({ ...solicitud, mensaje: "La cancelación quedó pendiente de aprobación" });
+  } catch (error) { res.status(400).json({ error: error.message || "No se pudo cancelar el pedido" }); }
+};
+
+const aprobarCancelacionPublica = async (req, res) => {
+  try {
+    const cancelado = await prisma.$transaction(async (tx) => {
+      const actual = await tx.pedido.findUnique({ where: { id: Number(req.params.id) }, include: { items: true } });
+      if (!actual) throw new Error("Pedido no encontrado");
+      if (!actual.solicitudCancelacion) throw new Error("No hay una solicitud de cancelación pendiente");
+      if (["CANCELADO", "COBRADO", "ENTREGADO", "LISTO"].includes(actual.estado)) throw new Error("El pedido ya no puede cancelarse");
+      const result = await tx.pedido.update({ where: { id: actual.id }, data: { estado: "CANCELADO", solicitudCancelacion: false }, include: { items: { include: { producto: true } } } });
+      for (const item of actual.items) await tx.producto.update({ where: { id: item.productoId }, data: { stockActual: { increment: item.cantidad } } });
+      return result;
+    });
+    req.io.emit("pedido_actualizado", cancelado); req.io.emit("pedido_cancelado", cancelado);
+    res.json(cancelado);
+  } catch (error) { res.status(400).json({ error: error.message || "No se pudo aprobar la cancelación" }); }
+};
+
+const rechazarCancelacionPublica = async (req, res) => {
+  try {
+    const pedido = await prisma.pedido.update({ where: { id: Number(req.params.id) }, data: { solicitudCancelacion: false }, include: { items: { include: { producto: true } } } });
+    req.io.emit("pedido_actualizado", pedido);
+    res.json(pedido);
+  } catch (error) { res.status(400).json({ error: "No se pudo rechazar la cancelación" }); }
+};
+
+const aprobarModificacionPublica = async (req, res) => {
+  try {
+    const pedido = await prisma.pedido.findUnique({ where: { id: Number(req.params.id) } });
+    if (!pedido?.solicitudModificacion) return res.status(400).json({ error: "No hay una modificación pendiente" });
+    const solicitud = pedido.solicitudModificacion;
+    const items = Array.isArray(solicitud.items) ? solicitud.items : [];
+    const resultado = await prisma.$transaction(async (tx) => {
+      const actual = await tx.pedido.findUnique({ where: { id: pedido.id }, include: { items: true } });
+      const validados = []; let total = 0;
+      for (const item of items) {
+        const cantidad = Number(item.cantidad); const producto = await tx.producto.findUnique({ where: { id: Number(item.productoId) } });
+        if (!producto || !producto.disponible || !Number.isInteger(cantidad) || cantidad <= 0) throw new Error("Producto o cantidad inválida");
+        const anterior = actual.items.filter((x) => x.productoId === producto.id).reduce((a, x) => a + x.cantidad, 0);
+        if (producto.stockActual + anterior < cantidad) throw new Error(`Stock insuficiente de ${producto.nombre}`);
+        const subtotal = Number(producto.precio) * cantidad; total += subtotal; validados.push({ producto, cantidad, subtotal, notas: item.notas || null });
+      }
+      for (const viejo of actual.items) await tx.producto.update({ where: { id: viejo.productoId }, data: { stockActual: { increment: viejo.cantidad } } });
+      for (const item of validados) await descontarStock(tx, item);
+      await tx.itemPedido.deleteMany({ where: { pedidoId: actual.id } });
+      return tx.pedido.update({ where: { id: actual.id }, data: { total, notas: solicitud.notas ?? actual.notas, solicitudModificacion: null }, include: { items: { include: { producto: true } } } });
+    });
+    req.io.emit("pedido_modificado", resultado);
+    res.json(resultado);
+  } catch (error) { res.status(400).json({ error: error.message || "No se pudo aprobar la modificación" }); }
+};
+
+const rechazarModificacionPublica = async (req, res) => {
+  try {
+    const pedido = await prisma.pedido.update({ where: { id: Number(req.params.id) }, data: { solicitudModificacion: null }, include: { items: { include: { producto: true } } } });
+    req.io.emit("pedido_actualizado", pedido);
+    res.json(pedido);
+  } catch (error) { res.status(400).json({ error: "No se pudo rechazar la modificación" }); }
+};
+
+module.exports = {
+  crearPedido, crearPedidoPublico, obtenerPedidos, actualizarEstado, obtenerPedidosPorMesa, obtenerPedidoPorNumero,
+  cobrarMesa, aprobarPedido, rechazarPedido, modificarPedidoPublico, cancelarPedidoPublico,
+  aprobarCancelacionPublica, rechazarCancelacionPublica, aprobarModificacionPublica, rechazarModificacionPublica,
+};
