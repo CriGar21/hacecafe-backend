@@ -9,6 +9,7 @@ const {
   obtenerPedidoPorNumero,
   cobrarMesa,
   aprobarPedido,
+  editarPedidoPendiente,
   rechazarPedido,
   modificarPedidoPublico,
   cancelarPedidoPublico,
@@ -31,6 +32,7 @@ router.get("/mesa/:mesa", obtenerPedidosPorMesa);
 router.get("/numero/:numero", obtenerPedidoPorNumero);
 router.post("/cobrar", soloRoles("DUENO", "EMPLEADO"), cobrarMesa);
 router.patch("/:id/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarPedido);
+router.patch("/:id/editar-pendiente", soloRoles("DUENO", "EMPLEADO"), editarPedidoPendiente);
 router.patch("/:id/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarPedido);
 router.patch("/:id/cancelacion/aprobar", soloRoles("DUENO", "EMPLEADO"), aprobarCancelacion);
 router.patch("/:id/cancelacion/rechazar", soloRoles("DUENO", "EMPLEADO"), rechazarCancelacion);
