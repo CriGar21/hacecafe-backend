@@ -11,6 +11,12 @@ const descontarStock = async (tx, item) => {
   }
 };
 
+const usuarioSistema = async (tx) => {
+  const usuario = await tx.usuario.findFirst({ where: { activo: true }, orderBy: { id: "asc" } });
+  if (!usuario) throw new Error("No hay un usuario activo para registrar el pedido");
+  return usuario.id;
+};
+
 const crearPedidoPublico = async (req, res) => {
   const { mesa, items, notas } = req.body;
   try {
@@ -21,9 +27,7 @@ const crearPedidoPublico = async (req, res) => {
     const itemsValidados = [];
     for (const item of items) {
       const cantidad = Number(item.cantidad);
-      if (!Number.isInteger(cantidad) || cantidad <= 0) {
-        return res.status(400).json({ error: "Cantidad inválida" });
-      }
+      if (!Number.isInteger(cantidad) || cantidad <= 0) return res.status(400).json({ error: "Cantidad inválida" });
       const producto = await prisma.producto.findUnique({ where: { id: Number(item.productoId) } });
       if (!producto || !producto.disponible) return res.status(400).json({ error: "Producto no disponible" });
       if (producto.stockActual < cantidad) return res.status(400).json({ error: `Stock insuficiente de ${producto.nombre}` });
@@ -34,10 +38,11 @@ const crearPedidoPublico = async (req, res) => {
     const ultimoPedido = await prisma.pedido.findFirst({ orderBy: { numero: "desc" } });
     const numero = (ultimoPedido?.numero || 0) + 1;
     const pedido = await prisma.$transaction(async (tx) => {
+      const usuarioId = await usuarioSistema(tx);
       const nuevoPedido = await tx.pedido.create({
         data: {
           numero,
-          usuarioId: 1,
+          usuarioId,
           mesa,
           notas: notas || null,
           total,
@@ -53,7 +58,7 @@ const crearPedidoPublico = async (req, res) => {
     res.status(201).json(pedido);
   } catch (error) {
     console.error(error);
-    const mensaje = error.message?.startsWith("Stock insuficiente") ? error.message : "Error al crear pedido";
+    const mensaje = error.message?.startsWith("Stock insuficiente") || error.message?.startsWith("No hay un usuario") ? error.message : "Error al crear pedido";
     res.status(500).json({ error: mensaje });
   }
 };
@@ -104,10 +109,19 @@ const obtenerPedidos = async (req, res) => {
 
 const actualizarEstado = async (req, res) => {
   const { id } = req.params; const { estado } = req.body;
+  const estadosValidos = ["ESPERANDO_APROBACION", "PENDIENTE", "EN_PREPARACION", "LISTO", "ENTREGADO", "COBRADO", "CANCELADO"];
+  if (!estadosValidos.includes(estado)) return res.status(400).json({ error: "Estado de pedido inválido" });
   try {
-    const pedido = await prisma.pedido.update({ where: { id: Number(id) }, data: { estado }, include: { items: { include: { producto: true } } } });
+    const pedido = await prisma.$transaction(async (tx) => {
+      const actual = await tx.pedido.findUnique({ where: { id: Number(id) }, include: { items: true } });
+      if (!actual) throw new Error("Pedido no encontrado");
+      if (actual.estado !== "CANCELADO" && estado === "CANCELADO") {
+        for (const item of actual.items) await tx.producto.update({ where: { id: item.productoId }, data: { stockActual: { increment: item.cantidad } } });
+      }
+      return tx.pedido.update({ where: { id: actual.id }, data: { estado }, include: { items: { include: { producto: true } } } });
+    });
     req.io.emit("pedido_actualizado", pedido); res.json(pedido);
-  } catch (error) { res.status(500).json({ error: "Error al actualizar pedido" }); }
+  } catch (error) { res.status(500).json({ error: error.message === "Pedido no encontrado" ? error.message : "Error al actualizar pedido" }); }
 };
 
 const obtenerPedidosPorMesa = async (req, res) => {
