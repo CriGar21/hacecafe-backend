@@ -20,26 +20,28 @@ app.use("/auth", require("./routes/auth"));
 app.use("/pedidos", require("./routes/pedidos"));
 app.use("/admin", require("./routes/admin"));
 app.use("/config", require("./routes/config"));
+app.use("/comercial", require("./routes/comercial"));
+app.use("/juegos", require("./routes/juegos"));
 
 app.get("/categorias/todas", verificarToken, async (req, res) => {
   try { res.json(await prisma.categoria.findMany({ orderBy: { ordenDisplay: "asc" } })); }
-  catch (error) { res.status(500).json({ error: "Error" }); }
+  catch { res.status(500).json({ error: "Error" }); }
 });
 
 app.post("/categorias/nueva", verificarToken, soloRoles("DUENO", "EMPLEADO"), async (req, res) => {
   const { nombre, icono } = req.body;
   try { res.status(201).json(await prisma.categoria.create({ data: { nombre, icono } })); }
-  catch (error) { res.status(500).json({ error: "Error al crear categoría" }); }
+  catch { res.status(500).json({ error: "Error al crear categoría" }); }
 });
 
 app.get("/productos", async (req, res) => {
   try { res.json(await prisma.producto.findMany({ where: { disponible: true }, include: { categoria: true }, orderBy: { ordenDisplay: "asc" } })); }
-  catch (error) { res.status(500).json({ error: "Error al obtener productos" }); }
+  catch { res.status(500).json({ error: "Error al obtener productos" }); }
 });
 
 app.get("/categorias", async (req, res) => {
   try { res.json(await prisma.categoria.findMany({ where: { activa: true }, orderBy: { ordenDisplay: "asc" } })); }
-  catch (error) { res.status(500).json({ error: "Error al obtener categorías" }); }
+  catch { res.status(500).json({ error: "Error al obtener categorías" }); }
 });
 
 io.on("connection", (socket) => {
