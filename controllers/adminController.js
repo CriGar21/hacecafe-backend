@@ -6,16 +6,12 @@ const prisma = new PrismaClient();
 
 const getDashboard = async (req, res) => {
   try {
-    const { fecha, desde, hasta, productoId } = req.query;
-
-    // Soporta tanto ?fecha=YYYY-MM-DD (un día) como ?desde=...&hasta=... (rango)
+    const { fecha, desde, hasta, productoId, usuarioId, metodoPago } = req.query;
     let fechaDesde, fechaHasta;
-
     if (desde && hasta) {
       fechaDesde = new Date(desde + "T00:00:00");
-      fechaHasta = new Date(hasta + "T23:59:59");
+      fechaHasta = new Date(hasta + "T23:59:59.999");
     } else {
-      // compatibilidad con el parámetro ?fecha= anterior
       const dia = fecha ? new Date(fecha + "T00:00:00") : new Date();
       dia.setHours(0, 0, 0, 0);
       fechaDesde = dia;
@@ -27,80 +23,79 @@ const getDashboard = async (req, res) => {
       where: {
         cobrado: true,
         actualizadoEn: { gte: fechaDesde, lte: fechaHasta },
+        ...(usuarioId ? { usuarioId: Number(usuarioId) } : {}),
+        ...(metodoPago ? { metodoPago: String(metodoPago) } : {}),
       },
-      include: { items: { include: { producto: true } } },
+      include: {
+        items: { include: { producto: true } },
+        usuario: { select: { id: true, nombre: true } },
+      },
+      orderBy: { actualizadoEn: "asc" },
     });
-
-    // Filtrar por producto si se especifica
     const pedidosFiltrados = productoId
-      ? pedidosDelPeriodo.filter((p) =>
-          p.items.some((i) => i.productoId === Number(productoId)),
-        )
+      ? pedidosDelPeriodo.filter((p) => p.items.some((i) => i.productoId === Number(productoId)))
       : pedidosDelPeriodo;
 
-    const totalDia = pedidosFiltrados.reduce(
-      (acc, p) => acc + Number(p.total),
-      0,
-    );
+    const totalDia = pedidosFiltrados.reduce((acc, p) => acc + Number(p.total), 0);
     const cantidadPedidos = pedidosFiltrados.length;
-
+    const descuentoTotal = pedidosFiltrados.reduce((acc, p) => acc + Number(p.descuentoMonto || 0), 0);
+    const pedidosConDescuento = pedidosFiltrados.filter((p) => Number(p.descuentoMonto || 0) > 0).length;
+    const subtotalTotal = pedidosFiltrados.reduce((acc, p) => acc + Number(p.subtotal || 0), 0);
     let gananciaEstimada = 0;
-    pedidosFiltrados.forEach((pedido) => {
-      pedido.items.forEach((item) => {
-        const precioCosto = Number(item.producto.precioCosto || 0);
-        gananciaEstimada +=
-          (Number(item.producto.precio) - precioCosto) * item.cantidad;
-      });
-    });
+    pedidosFiltrados.forEach((pedido) => pedido.items.forEach((item) => {
+      gananciaEstimada += (Number(item.producto.precio) - Number(item.producto.precioCosto || 0)) * item.cantidad;
+    }));
 
-    const itemsDelPeriodo = pedidosFiltrados.flatMap((p) => p.items);
     const productosMap = {};
-    itemsDelPeriodo.forEach((item) => {
+    pedidosFiltrados.flatMap((p) => p.items).forEach((item) => {
       const nombre = item.producto.nombre;
-      const precioCosto = Number(item.producto.precioCosto || 0);
-      if (!productosMap[nombre])
-        productosMap[nombre] = { nombre, cantidad: 0, total: 0, margen: 0 };
+      if (!productosMap[nombre]) productosMap[nombre] = { nombre, cantidad: 0, total: 0, margen: 0 };
       productosMap[nombre].cantidad += item.cantidad;
       productosMap[nombre].total += Number(item.subtotal);
-      productosMap[nombre].margen +=
-        (Number(item.producto.precio) - precioCosto) * item.cantidad;
+      productosMap[nombre].margen += (Number(item.producto.precio) - Number(item.producto.precioCosto || 0)) * item.cantidad;
     });
-    const topProductos = Object.values(productosMap)
-      .sort((a, b) => b.cantidad - a.cantidad)
-      .slice(0, 5);
+    const topProductos = Object.values(productosMap).sort((a, b) => b.cantidad - a.cantidad).slice(0, 8);
 
-    // Ventas por hora — útil para 1 día; para rangos muestra el acumulado por hora del día
-    const ventasPorHora = Array(24)
-      .fill(0)
-      .map((_, hora) => ({ hora, total: 0, pedidos: 0 }));
+    const porHora = Array(24).fill(0).map((_, hora) => ({ hora, total: 0, pedidos: 0 }));
+    const porDia = {};
+    const porUsuario = {};
+    const porMetodoPagoMap = {};
     pedidosFiltrados.forEach((pedido) => {
-      const hora = new Date(pedido.actualizadoEn).getHours();
-      ventasPorHora[hora].total += Number(pedido.total);
-      ventasPorHora[hora].pedidos += 1;
+      const fechaPedido = new Date(pedido.actualizadoEn);
+      const hora = fechaPedido.getHours();
+      porHora[hora].total += Number(pedido.total);
+      porHora[hora].pedidos += 1;
+      const diaKey = fechaPedido.toISOString().slice(0, 10);
+      if (!porDia[diaKey]) porDia[diaKey] = { fecha: diaKey, total: 0, pedidos: 0 };
+      porDia[diaKey].total += Number(pedido.total);
+      porDia[diaKey].pedidos += 1;
+      const usuario = pedido.usuario?.nombre || "Sin usuario";
+      if (!porUsuario[usuario]) porUsuario[usuario] = { id: pedido.usuarioId, nombre: usuario, pedidos: 0, total: 0, descuentos: 0 };
+      porUsuario[usuario].pedidos += 1;
+      porUsuario[usuario].total += Number(pedido.total);
+      porUsuario[usuario].descuentos += Number(pedido.descuentoMonto || 0);
+      const metodo = pedido.metodoPago || "EFECTIVO";
+      if (!porMetodoPagoMap[metodo]) porMetodoPagoMap[metodo] = { metodo, pedidos: 0, total: 0 };
+      porMetodoPagoMap[metodo].pedidos += 1;
+      porMetodoPagoMap[metodo].total += Number(pedido.total);
     });
 
-    const pedidosActivos = await prisma.pedido.count({
-      where: { estado: { notIn: ["ENTREGADO", "CANCELADO", "COBRADO"] } },
-    });
-
+    const pedidosActivos = await prisma.pedido.count({ where: { estado: { notIn: ["ENTREGADO", "CANCELADO", "COBRADO"] } } });
     const todosProductos = await prisma.producto.findMany({
       where: { disponible: true },
       select: { id: true, nombre: true, stockActual: true, stockMinimo: true },
     });
-    const stockBajo = todosProductos.filter(
-      (p) => p.stockActual <= p.stockMinimo,
-    );
+    const stockBajo = todosProductos.filter((p) => p.stockActual <= p.stockMinimo);
 
     res.json({
-      totalDia,
-      gananciaEstimada: Math.round(gananciaEstimada),
-      cantidadPedidos,
-      pedidosActivos,
-      topProductos,
-      ventasPorHora: ventasPorHora.filter((v) => v.pedidos > 0),
-      stockBajo,
-      fechaDesde,
-      fechaHasta,
+      totalDia, gananciaEstimada: Math.round(gananciaEstimada), cantidadPedidos, pedidosActivos,
+      topProductos, ventasPorHora: porHora.filter((v) => v.pedidos > 0),
+      ventasPorDia: Object.values(porDia).sort((a, b) => a.fecha.localeCompare(b.fecha)),
+      porUsuario: Object.values(porUsuario).sort((a, b) => b.pedidos - a.pedidos),
+      porMetodoPago: Object.values(porMetodoPagoMap),
+      descuentoTotal, pedidosConDescuento, subtotalTotal,
+      ticketPromedio: cantidadPedidos ? totalDia / cantidadPedidos : 0,
+      stockBajo, fechaDesde, fechaHasta,
     });
   } catch (error) {
     console.error(error);
