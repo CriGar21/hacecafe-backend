@@ -49,10 +49,28 @@ model Usuario {
   password     String    @db.VarChar(255)
   rol          Rol       @default(EMPLEADO)
   activo       Boolean   @default(true)
+  pinHash      String?   @unique @db.VarChar(64) // HMAC del PIN de fichaje (nunca el PIN en claro)
   creadoEn     DateTime  @default(now())
   pedidos      Pedido[]
+  fichajes     Fichaje[]
 
   @@map("usuarios")
+}
+
+model Fichaje {
+  id         Int      @id @default(autoincrement())
+  usuarioId  Int
+  tipo       String   @db.VarChar(10) // INGRESO | EGRESO
+  latitud    Float
+  longitud   Float
+  distanciaM Int?
+  creadoEn   DateTime @default(now())
+
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, creadoEn])
+  @@index([creadoEn])
+  @@map("fichajes")
 }
 
 model Pedido {
