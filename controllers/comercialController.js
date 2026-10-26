@@ -32,8 +32,21 @@ async function aplicarDescuentoPedido(req, res) {
 async function listarPromocionesPublicas(req, res) {
   const ahora = new Date();
   try {
-    const data = await prisma.promocion.findMany({ where: { activa: true, mostrarMenu: true, AND: [{ OR: [{ desde: null }, { desde: { lte: ahora } }] }, { OR: [{ hasta: null }, { hasta: { gte: ahora } }] }] }, orderBy: { creadoEn: "desc" } });
-    res.json(data);
+    const promociones = await prisma.promocion.findMany({ where: { activa: true, mostrarMenu: true, AND: [{ OR: [{ desde: null }, { desde: { lte: ahora } }] }, { OR: [{ hasta: null }, { hasta: { gte: ahora } }] }] }, orderBy: { creadoEn: "desc" } });
+    const resultado = [];
+    for (const promo of promociones) {
+      const componentes = Array.isArray(promo.productos) ? promo.productos : [];
+      if (componentes.length) {
+        const ids = componentes.map(x => Number(x.productoId)).filter(Number.isInteger);
+        const productos = await prisma.producto.findMany({ where: { id: { in: ids } } });
+        const porId = new Map(productos.map(p => [p.id, p]));
+        const detalle = componentes.map(x => ({ productoId: Number(x.productoId), cantidad: Number(x.cantidad || 1), producto: porId.get(Number(x.productoId)) })).filter(x => x.producto);
+        const disponible = detalle.length === componentes.length && detalle.every(x => x.producto.disponible && x.producto.stockActual >= x.cantidad);
+        if (!disponible) continue;
+        resultado.push({ ...promo, productos: detalle.map(x => ({ productoId: x.productoId, cantidad: x.cantidad, nombre: x.producto.nombre })) });
+      } else resultado.push({ ...promo, productos: [] });
+    }
+    res.json(resultado);
   } catch { res.status(500).json({ error: "No se pudieron cargar las promociones" }); }
 }
 
@@ -43,7 +56,7 @@ async function listarPromocionesAdmin(req, res) {
 }
 
 async function crearPromocion(req, res) {
-  const { nombre, descripcion, imagenUrl, tipo, valor, activa, mostrarMenu, desde, hasta } = req.body;
+  const { nombre, descripcion, imagenUrl, tipo, valor, precioOferta, productos, activa, mostrarMenu, desde, hasta } = req.body;
   if (!nombre?.trim()) return res.status(400).json({ error: "El nombre es obligatorio" });
   try {
     const tiposPermitidos = ["DESCUENTO", "MONTO_FIJO", "COMBO", "2X1", "REGALO", "INFORMATIVA"];
@@ -54,7 +67,14 @@ async function crearPromocion(req, res) {
     const fechaDesde = desde ? new Date(desde) : null;
     const fechaHasta = hasta ? new Date(hasta) : null;
     if ((fechaDesde && Number.isNaN(fechaDesde.getTime())) || (fechaHasta && Number.isNaN(fechaHasta.getTime())) || (fechaDesde && fechaHasta && fechaHasta < fechaDesde)) return res.status(400).json({ error: "Revisá las fechas de vigencia." });
-    const data = await prisma.promocion.create({ data: { nombre: nombre.trim(), descripcion: descripcion || null, imagenUrl: imagenUrl || null, tipo: tipoSeguro, valor: valorSeguro, activa: activa !== false, mostrarMenu: mostrarMenu !== false, desde: fechaDesde, hasta: fechaHasta } });
+    const componentes = Array.isArray(productos) ? productos.map(x => ({ productoId: Number(x.productoId), cantidad: Number(x.cantidad || 1) })) : [];
+    if (componentes.some(x => !Number.isInteger(x.productoId) || x.productoId <= 0 || !Number.isInteger(x.cantidad) || x.cantidad <= 0)) return res.status(400).json({ error: "Los productos y cantidades de la promoción no son válidos." });
+    if (precioOferta !== undefined && (!Number.isFinite(Number(precioOferta)) || Number(precioOferta) < 0)) return res.status(400).json({ error: "El precio de oferta no es válido." });
+    if (componentes.length) {
+      const existentes = await prisma.producto.findMany({ where: { id: { in: componentes.map(x => x.productoId) } }, select: { id: true } });
+      if (existentes.length !== componentes.length) return res.status(400).json({ error: "Uno o más productos no existen." });
+    }
+    const data = await prisma.promocion.create({ data: { nombre: nombre.trim(), descripcion: descripcion || null, imagenUrl: imagenUrl || null, tipo: tipoSeguro, valor: valorSeguro, precioOferta: precioOferta == null || precioOferta === "" ? null : Number(precioOferta), productos: componentes.length ? componentes : undefined, activa: activa !== false, mostrarMenu: mostrarMenu !== false, desde: fechaDesde, hasta: fechaHasta } });
     res.status(201).json(data);
   } catch { res.status(400).json({ error: "No se pudo crear la promoción" }); }
 }
@@ -64,6 +84,19 @@ async function actualizarPromocion(req, res) {
     const tiposPermitidos = ["DESCUENTO", "MONTO_FIJO", "COMBO", "2X1", "REGALO", "INFORMATIVA"];
     const data = {};
     for (const campo of ["nombre", "descripcion", "imagenUrl", "activa", "mostrarMenu"]) if (req.body[campo] !== undefined) data[campo] = req.body[campo];
+    if (req.body.precioOferta !== undefined) {
+      const n = req.body.precioOferta === "" || req.body.precioOferta === null ? null : Number(req.body.precioOferta);
+      if (n !== null && (!Number.isFinite(n) || n < 0)) return res.status(400).json({ error: "El precio de oferta no es válido." });
+      data.precioOferta = n;
+    }
+    if (req.body.productos !== undefined) {
+      if (!Array.isArray(req.body.productos)) return res.status(400).json({ error: "Los productos deben enviarse como lista." });
+      const componentes = req.body.productos.map(x => ({ productoId: Number(x.productoId), cantidad: Number(x.cantidad || 1) }));
+      if (componentes.some(x => !Number.isInteger(x.productoId) || x.productoId <= 0 || !Number.isInteger(x.cantidad) || x.cantidad <= 0)) return res.status(400).json({ error: "Productos o cantidades inválidos." });
+      const existentes = await prisma.producto.findMany({ where: { id: { in: componentes.map(x => x.productoId) } }, select: { id: true } });
+      if (existentes.length !== componentes.length) return res.status(400).json({ error: "Uno o más productos no existen." });
+      data.productos = componentes;
+    }
     if (data.nombre !== undefined && !String(data.nombre).trim()) return res.status(400).json({ error: "El nombre es obligatorio." });
     if (req.body.tipo !== undefined) {
       if (!tiposPermitidos.includes(req.body.tipo)) return res.status(400).json({ error: "Tipo de promoción inválido." });
