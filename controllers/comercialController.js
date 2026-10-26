@@ -120,8 +120,8 @@ async function actualizarPromocion(req, res) {
 }
 
 async function eliminarPromocion(req, res) {
-  try { await prisma.promocion.update({ where: { id: Number(req.params.id) }, data: { activa: false, mostrarMenu: false } }); res.json({ ok: true }); }
-  catch { res.status(400).json({ error: "No se pudo desactivar la promoción" }); }
+  try { await prisma.promocion.delete({ where: { id: Number(req.params.id) } }); res.json({ ok: true }); }
+  catch { res.status(400).json({ error: "No se pudo eliminar la promoción" }); }
 }
 
 module.exports = { aplicarDescuentoPedido, listarPromocionesPublicas, listarPromocionesAdmin, crearPromocion, actualizarPromocion, eliminarPromocion };
