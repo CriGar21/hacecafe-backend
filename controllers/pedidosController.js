@@ -14,7 +14,7 @@ async function validarPublico(id, token) {
 }
 
 const crearPedidoPublico = async (req, res) => {
-  const { mesa, items, notas } = req.body;
+  const { mesa, items, notas, promocionId } = req.body;
   try {
     if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "El pedido debe contener al menos un producto" });
     const val = []; let total = 0;
@@ -25,12 +25,28 @@ const crearPedidoPublico = async (req, res) => {
       if (producto.stockActual < cantidad) return res.status(400).json({ error: `Stock insuficiente de ${producto.nombre}` });
       const subtotal = Number(producto.precio) * cantidad; total += subtotal; val.push({ producto, cantidad, subtotal, notas: i.notas || null });
     }
+    let subtotalPedido = total; let descuentoPromo = 0;
+    if (promocionId) {
+      const ahora = new Date();
+      const promo = await prisma.promocion.findFirst({ where: { id: Number(promocionId), activa: true, mostrarMenu: true, tipo: "COMBO", AND: [{ OR: [{ desde: null }, { desde: { lte: ahora } }] }, { OR: [{ hasta: null }, { hasta: { gte: ahora } }] }] } });
+      if (!promo || promo.precioOferta == null || !Array.isArray(promo.productos) || !promo.productos.length) return res.status(400).json({ error: "Esta promoción ya no está disponible para pedir." });
+      for (const comp of promo.productos) {
+        const requerida = Number(comp.cantidad || 1);
+        const incluida = items.reduce((s, item) => Number(item.productoId) === Number(comp.productoId) ? s + Number(item.cantidad || 0) : s, 0);
+        if (incluida < requerida) return res.status(400).json({ error: "Faltan productos del combo en el pedido. Volvé a agregar la promoción." });
+        const linea = val.find(x => x.producto.id === Number(comp.productoId));
+        if (!linea || !linea.producto.disponible || linea.producto.stockActual < incluida) return res.status(400).json({ error: "Uno de los productos de la promoción se quedó sin stock." });
+        descuentoPromo += Number(linea.producto.precio) * requerida;
+      }
+      descuentoPromo = Math.max(0, Math.round((descuentoPromo - Number(promo.precioOferta)) * 100) / 100);
+      subtotalPedido = Math.max(0, Math.round((total - descuentoPromo) * 100) / 100);
+    }
     const last = await prisma.pedido.findFirst({ orderBy: { numero: "desc" } });
     const numero = (last?.numero || 0) + 1; const clienteToken = tokenCliente();
     const pedido = await prisma.$transaction(async tx => {
       const u = await tx.usuario.findFirst({ where: { activo: true }, orderBy: { id: "asc" } });
       if (!u) throw new Error("No hay usuario activo");
-      const p = await tx.pedido.create({ data: { numero, usuarioId: u.id, mesa, notas: notas || null, total, clienteToken, estado: "ESPERANDO_APROBACION", items: { create: val.map(i => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) } }, include: { items: { include: { producto: true } } } });
+      const p = await tx.pedido.create({ data: { numero, usuarioId: u.id, mesa, notas: notas || null, subtotal: total, descuentoMonto: descuentoPromo, descuentoMotivo: descuentoPromo > 0 ? "Promoción combo" : null, descuentoOrigen: descuentoPromo > 0 ? "PROMOCION" : null, total: subtotalPedido, clienteToken, estado: "ESPERANDO_APROBACION", items: { create: val.map(i => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) } }, include: { items: { include: { producto: true } } } });
       for (const i of val) await stock(tx, i.producto.id, i.cantidad);
       return p;
     });
