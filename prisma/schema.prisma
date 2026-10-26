@@ -110,6 +110,8 @@ model Promocion {
   imagenUrl     String?  @db.VarChar(300)
   tipo          String   @default("DESCUENTO") @db.VarChar(30)
   valor         Decimal  @default(0) @db.Decimal(10, 2)
+  precioOferta  Decimal? @db.Decimal(10, 2)
+  productos     Json?
   activa        Boolean  @default(true)
   mostrarMenu   Boolean  @default(true)
   desde         DateTime?
