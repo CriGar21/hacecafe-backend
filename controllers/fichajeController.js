@@ -1,5 +1,5 @@
 const { PrismaClient } = require("@prisma/client");
-const { hashPin, PIN_REGEX } = require("../lib/pin");
+const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
@@ -24,12 +24,15 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
 
 const registrarFichaje = async (req, res) => {
   try {
-    const { pin, tipo } = req.body;
+    // Se ficha con las mismas credenciales del login: email + contraseña
+    const email = String(req.body.email ?? "").trim();
+    const password = String(req.body.password ?? "");
+    const { tipo } = req.body;
     const latitud = Number(req.body.latitud);
     const longitud = Number(req.body.longitud);
 
-    if (!PIN_REGEX.test(String(pin ?? ""))) {
-      return res.status(400).json({ error: "El PIN debe tener entre 4 y 6 dígitos." });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Ingresá tu email y contraseña." });
     }
     if (!["INGRESO", "EGRESO"].includes(tipo)) {
       return res.status(400).json({ error: "Tipo de fichaje inválido." });
@@ -42,10 +45,14 @@ const registrarFichaje = async (req, res) => {
     }
 
     // 1. Identificar al empleado (antes que el GPS, para no revelar la
-    //    distancia a quien no tiene un PIN válido)
-    const usuario = await prisma.usuario.findUnique({ where: { pinHash: hashPin(pin) } });
-    if (!usuario || !usuario.activo) {
-      return res.status(401).json({ error: "PIN incorrecto o inválido." });
+    //    distancia a quien no tiene credenciales válidas). Mismo mensaje si el
+    //    email no existe o la contraseña es incorrecta.
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const passwordValida = usuario
+      ? await bcrypt.compare(password, usuario.password)
+      : false;
+    if (!usuario || !usuario.activo || !passwordValida) {
+      return res.status(401).json({ error: "Email o contraseña incorrectos." });
     }
 
     // 2. Validar ubicación
