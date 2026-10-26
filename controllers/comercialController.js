@@ -4,13 +4,21 @@ const round = n => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 async function aplicarDescuentoPedido(req, res) {
   const id = Number(req.params.id);
-  const porcentaje = Math.min(100, Math.max(0, Number(req.body.porcentaje || 0)));
-  if (!Number.isFinite(porcentaje)) return res.status(400).json({ error: "Porcentaje inválido" });
+  const porcentajeRecibido = Number(req.body.porcentaje);
+  if (!Number.isFinite(porcentajeRecibido) || porcentajeRecibido < 0 || porcentajeRecibido > 100) {
+    return res.status(400).json({ error: "El descuento debe ser un porcentaje entre 0 y 100" });
+  }
+  const porcentaje = porcentajeRecibido;
   try {
     const pedido = await prisma.pedido.findUnique({ where: { id }, include: { items: true } });
     if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
     if (pedido.cobrado || pedido.estado === "CANCELADO") return res.status(409).json({ error: "El pedido ya no admite descuentos" });
-    const subtotal = Number(pedido.subtotal || pedido.items.reduce((a, i) => a + Number(i.subtotal), 0));
+    // Recalcular siempre desde los renglones del pedido: subtotal puede estar
+    // vacío o desactualizado en pedidos creados antes de habilitar descuentos.
+    const subtotal = round(pedido.items.reduce((s, item) => s + Number(item.subtotal || 0), 0));
+    if (!Number.isFinite(subtotal) || subtotal < 0) {
+      return res.status(400).json({ error: "No se pudo calcular el subtotal del pedido" });
+    }
     const descuento = round(subtotal * porcentaje / 100);
     const total = round(subtotal - descuento);
     const actualizado = await prisma.pedido.update({ where: { id }, data: { subtotal, descuentoPorcentaje: porcentaje, descuentoMonto: descuento, descuentoMotivo: String(req.body.motivo || "Descuento manual").slice(0,160), descuentoOrigen: req.body.origen === "JUEGO" ? "JUEGO" : "MANUAL", descuentoCodigo: req.body.codigo || null, total }, include: { items: { include: { producto: true } }, usuario: true } });
