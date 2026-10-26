@@ -202,6 +202,7 @@ const editarPedidoPendiente = async (req, res) => {
         data: {
           total,
           notas: req.body.notas ?? actual.notas,
+          solicitudModificacion: null,
           estado: actual.estado === "ESPERANDO_APROBACION" ? "PENDIENTE" : actual.estado,
           items: { create: val.map(i => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) },
         },
