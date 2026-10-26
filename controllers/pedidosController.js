@@ -183,7 +183,7 @@ const editarPedidoPendiente = async (req, res) => {
     const pedido = await prisma.$transaction(async tx => {
       const actual = await tx.pedido.findUnique({ where: { id }, include: { items: true } });
       if (!actual) throw new Error("Pedido no encontrado");
-      if (actual.estado !== "ESPERANDO_APROBACION") throw new Error("Solo se pueden editar pedidos antes de aceptarlos");
+      if (!["ESPERANDO_APROBACION", "PENDIENTE", "EN_PREPARACION"].includes(actual.estado) || actual.cobrado) throw new Error("Solo se pueden modificar pedidos no cobrados que sigan activos");
       const val = []; let total = 0;
       for (const item of items) {
         const cantidad = Number(item.cantidad);
@@ -202,13 +202,14 @@ const editarPedidoPendiente = async (req, res) => {
         data: {
           total,
           notas: req.body.notas ?? actual.notas,
-          estado: "PENDIENTE",
+          estado: actual.estado === "ESPERANDO_APROBACION" ? "PENDIENTE" : actual.estado,
           items: { create: val.map(i => ({ productoId: i.producto.id, cantidad: i.cantidad, precioUnit: i.producto.precio, subtotal: i.subtotal, notas: i.notas })) },
         },
         include: completo,
       });
     });
-    req.io.emit("pedido_aprobado", pedido);
+    if (pedido.estado === "PENDIENTE" && pedido.estado !== "EN_PREPARACION") req.io.emit("pedido_aprobado", pedido);
+    req.io.emit("pedido_modificado", pedido);
     req.io.emit("pedido_actualizado", pedido);
     req.io.emit("nuevo_pedido", pedido);
     res.json(pedido);
