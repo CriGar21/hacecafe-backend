@@ -97,13 +97,22 @@ const registrarFichaje = async (req, res) => {
   }
 };
 
-// Solo dueño. Filtros opcionales: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD&usuarioId=N
+// Solo dueño. Filtros opcionales: ?desde=<fecha ISO>&hasta=<fecha ISO>&usuarioId=N
+// El frontend manda el rango ya convertido desde la hora local del dueño.
 const obtenerFichajes = async (req, res) => {
   try {
     const { desde, hasta, usuarioId } = req.query;
     const creadoEn = {};
-    if (desde) creadoEn.gte = new Date(`${desde}T00:00:00`);
-    if (hasta) creadoEn.lte = new Date(`${hasta}T23:59:59.999`);
+    if (desde) {
+      const d = new Date(desde);
+      if (Number.isNaN(d.getTime())) return res.status(400).json({ error: "Fecha 'desde' inválida." });
+      creadoEn.gte = d;
+    }
+    if (hasta) {
+      const h = new Date(hasta);
+      if (Number.isNaN(h.getTime())) return res.status(400).json({ error: "Fecha 'hasta' inválida." });
+      creadoEn.lte = h;
+    }
 
     const fichajes = await prisma.fichaje.findMany({
       where: {
@@ -112,7 +121,7 @@ const obtenerFichajes = async (req, res) => {
       },
       include: { usuario: { select: { id: true, nombre: true, email: true, rol: true } } },
       orderBy: { creadoEn: "desc" },
-      take: 500,
+      take: 1000,
     });
     res.json(fichajes);
   } catch (error) {

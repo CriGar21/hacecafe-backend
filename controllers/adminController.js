@@ -1,6 +1,5 @@
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
-const { hashPin, PIN_REGEX } = require("../lib/pin");
 const prisma = new PrismaClient();
 
 // ─── DASHBOARD ────────────────────────────────────────────────
@@ -234,34 +233,24 @@ const getUsuarios = async (req, res) => {
         rol: true,
         activo: true,
         creadoEn: true,
-        pinHash: true,
       },
       orderBy: { creadoEn: "asc" },
     });
-    res.json(usuarios.map(({ pinHash, ...u }) => ({ ...u, tienePin: !!pinHash })));
+    res.json(usuarios);
   } catch (error) {
     res.status(500).json({ error: "Error al obtener usuarios" });
   }
 };
 
 const crearUsuario = async (req, res) => {
-  const { nombre, email, password, rol, pin } = req.body;
+  const { nombre, email, password, rol } = req.body;
   try {
     const existe = await prisma.usuario.findUnique({ where: { email } });
     if (existe)
       return res.status(400).json({ error: "El email ya está registrado" });
     const passwordHash = await bcrypt.hash(password, 10);
-    const data = { nombre, email, password: passwordHash, rol };
-    if (pin) {
-      if (!PIN_REGEX.test(String(pin)))
-        return res.status(400).json({ error: "El PIN debe tener entre 4 y 6 dígitos" });
-      const pinHash = hashPin(pin);
-      if (await prisma.usuario.findUnique({ where: { pinHash } }))
-        return res.status(400).json({ error: "Ese PIN ya está en uso, elegí otro" });
-      data.pinHash = pinHash;
-    }
     const usuario = await prisma.usuario.create({
-      data,
+      data: { nombre, email, password: passwordHash, rol },
       select: { id: true, nombre: true, email: true, rol: true, activo: true },
     });
     res.status(201).json(usuario);
@@ -272,19 +261,10 @@ const crearUsuario = async (req, res) => {
 
 const editarUsuario = async (req, res) => {
   const { id } = req.params;
-  const { nombre, rol, password, pin } = req.body;
+  const { nombre, rol, password } = req.body;
   try {
     const data = { nombre, rol };
     if (password) data.password = await bcrypt.hash(password, 10);
-    if (pin) {
-      if (!PIN_REGEX.test(String(pin)))
-        return res.status(400).json({ error: "El PIN debe tener entre 4 y 6 dígitos" });
-      const pinHash = hashPin(pin);
-      const otro = await prisma.usuario.findUnique({ where: { pinHash } });
-      if (otro && otro.id !== Number(id))
-        return res.status(400).json({ error: "Ese PIN ya está en uso, elegí otro" });
-      data.pinHash = pinHash;
-    }
     const usuario = await prisma.usuario.update({
       where: { id: Number(id) },
       data,
