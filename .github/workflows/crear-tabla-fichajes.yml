@@ -1,0 +1,17 @@
+name: Crear tabla fichajes
+on:
+  workflow_dispatch:
+jobs:
+  crear-tabla:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Instalar cliente MySQL
+        run: npm install mysql2
+      - name: Crear tabla en Aiven
+        env:
+          DATABASE_URL: ${{ secrets.AIVEN_DATABASE_URL }}
+        run: node -e "const mysql=require('mysql2/promise'); (async()=>{if(!process.env.DATABASE_URL)throw Error('Configura AIVEN_DATABASE_URL en GitHub Actions secrets'); const u=new URL(process.env.DATABASE_URL); const c=await mysql.createConnection({host:u.hostname,port:Number(u.port||3306),user:decodeURIComponent(u.username),password:decodeURIComponent(u.password),database:u.pathname.slice(1),ssl:{rejectUnauthorized:false}}); try {const [t]=await c.query(\"SHOW TABLES LIKE 'usuarios'\"); if(!t.length) throw Error(\"No existe usuarios; se cancela\"); await c.query(\"CREATE TABLE IF NOT EXISTS fichajes (id INT NOT NULL AUTO_INCREMENT, usuarioId INT NOT NULL, tipo VARCHAR(10) NOT NULL, latitud DOUBLE NOT NULL, longitud DOUBLE NOT NULL, distanciaM INT NULL, creadoEn DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY(id), INDEX fichajes_usuarioId_creadoEn_idx(usuarioId,creadoEn), INDEX fichajes_creadoEn_idx(creadoEn), CONSTRAINT fichajes_usuarioId_fkey FOREIGN KEY(usuarioId) REFERENCES usuarios(id) ON DELETE CASCADE ON UPDATE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci\"); console.log('Tabla fichajes verificada/creada');} finally {await c.end()}})().catch(e=>{console.error(e.message);process.exit(1)})"
