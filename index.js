@@ -98,6 +98,8 @@ app.use("/pedidos", require("./routes/pedidos"));
 app.use("/admin", require("./routes/admin"));
 app.use("/config", require("./routes/config"));
 app.use("/fichajes", require("./routes/fichaje"));
+app.use("/comercial", require("./routes/comercial"));
+app.use("/juegos", require("./routes/juegos"));
 app.use(require("./routes/catalogo")); // /productos, /categorias...
 
 app.use((req, res) => {
