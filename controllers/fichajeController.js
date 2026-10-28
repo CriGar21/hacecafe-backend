@@ -4,8 +4,12 @@ const bcrypt = require("bcryptjs");
 const prisma = new PrismaClient();
 
 // Ubicación del local (configurable en .env)
-const LOCAL_LAT = Number.parseFloat(process.env.LOCAL_LAT) || -38.5714;
-const LOCAL_LNG = Number.parseFloat(process.env.LOCAL_LNG) || -58.7333;
+const LOCAL_LAT = Number.parseFloat(process.env.LOCAL_LAT);
+const LOCAL_LNG = Number.parseFloat(process.env.LOCAL_LNG);
+// En entorno de prueba, si no se configuró el punto fijo del local,
+// se registra la ubicación del navegador sin bloquear por distancia.
+// Para producción, configurar LOCAL_LAT y LOCAL_LNG en Render.
+const VALIDAR_GEOFENCE = Number.isFinite(LOCAL_LAT) && Number.isFinite(LOCAL_LNG);
 const RADIO_MAXIMO_METROS = Number.parseInt(process.env.RADIO_FICHAJE_METROS, 10) || 150;
 // Evita fichajes duplicados por doble toque
 const SEGUNDOS_MINIMOS_ENTRE_FICHAJES = 30;
@@ -56,8 +60,10 @@ const registrarFichaje = async (req, res) => {
     }
 
     // 2. Validar ubicación
-    const distancia = calcularDistancia(LOCAL_LAT, LOCAL_LNG, latitud, longitud);
-    if (distancia > RADIO_MAXIMO_METROS) {
+    const distancia = VALIDAR_GEOFENCE
+      ? calcularDistancia(LOCAL_LAT, LOCAL_LNG, latitud, longitud)
+      : null;
+    if (VALIDAR_GEOFENCE && distancia > RADIO_MAXIMO_METROS) {
       return res.status(403).json({
         error: `Te encontrás fuera del rango del local (${Math.round(distancia)} m).`,
       });
@@ -83,11 +89,12 @@ const registrarFichaje = async (req, res) => {
     }
 
     const fichaje = await prisma.fichaje.create({
-      data: { usuarioId: usuario.id, tipo, latitud, longitud, distanciaM: Math.round(distancia) },
+      data: { usuarioId: usuario.id, tipo, latitud, longitud, distanciaM: distancia === null ? null : Math.round(distancia) },
     });
 
     res.status(201).json({
       success: true,
+      ...(VALIDAR_GEOFENCE ? {} : { aviso: "Modo de prueba: se guardó la ubicación, pero no se validó la distancia al local." }),
       mensaje: `${tipo === "INGRESO" ? "Ingreso" : "Egreso"} registrado para ${usuario.nombre}.`,
       fichaje: { id: fichaje.id, tipo: fichaje.tipo, creadoEn: fichaje.creadoEn },
     });
