@@ -51,9 +51,26 @@ model Usuario {
   activo       Boolean   @default(true)
   creadoEn     DateTime  @default(now())
   pedidos      Pedido[]
+  fichajes     Fichaje[]
   @@map("usuarios")
 }
 
+
+model Fichaje {
+  id         Int      @id @default(autoincrement())
+  usuarioId  Int
+  tipo       String   @db.VarChar(10)
+  latitud    Float
+  longitud   Float
+  distanciaM Int?
+  creadoEn   DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([usuarioId, creadoEn])
+  @@index([creadoEn])
+  @@map("fichajes")
+}
 
 model Pedido {
   id                    Int           @id @default(autoincrement())
