@@ -97,7 +97,6 @@ app.use("/auth", require("./routes/auth"));
 app.use("/pedidos", require("./routes/pedidos"));
 app.use("/admin", require("./routes/admin"));
 app.use("/config", require("./routes/config"));
-app.use("/fichajes", require("./routes/fichaje"));
 app.use(require("./routes/catalogo")); // /productos, /categorias...
 
 app.use((req, res) => {
