@@ -9,5 +9,5 @@ const limitarFichaje = rateLimit({ windowMs: 10 * 60 * 1000, limit: 20, standard
 router.get("/mio", verificarToken, estadoFichaje);
 router.post("/mio", verificarToken, limitarFichaje, registrarFichajeAutenticado);
 router.post("/", limitarFichaje, registrarFichaje);
-router.get("/", verificarToken, soloRoles("DUEÑO"), obtenerFichajes);
+router.get("/", verificarToken, soloRoles("DUENO"), obtenerFichajes);
 module.exports = router;
