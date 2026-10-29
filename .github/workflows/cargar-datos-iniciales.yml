@@ -1,0 +1,49 @@
+name: Cargar datos iniciales HaceCafe
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: "Confirmo crear el usuario dueño y cargar el catálogo de ejemplo si está vacío"
+        required: true
+        type: choice
+        options:
+          - "no"
+          - "si"
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    if: ${{ inputs.confirmar == 'si' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Crear usuario dueño y catálogo inicial
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEED_DUENO_EMAIL: ${{ secrets.SEED_DUENO_EMAIL }}
+          SEED_DUENO_PASSWORD: ${{ secrets.SEED_DUENO_PASSWORD }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta el secreto DATABASE_URL."
+            exit 1
+          fi
+          if [ -z "$SEED_DUENO_PASSWORD" ]; then
+            echo "::error::Creá el secreto SEED_DUENO_PASSWORD antes de ejecutar este flujo."
+            exit 1
+          fi
+          npm run seed
