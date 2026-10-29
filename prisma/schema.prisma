@@ -150,6 +150,46 @@ model JuegoConfig {
   @@map("juegos_config")
 }
 
+
+model Apariencia {
+  id             Int      @id
+  nombre         String   @default("HaceCafe") @db.VarChar(120)
+  subtitulo      String   @default("Gastronomía artesanal") @db.VarChar(180)
+  bienvenida     String?  @db.Text
+  logoUrl        String?  @db.VarChar(500)
+  heroBgUrl      String?  @db.VarChar(500)
+  colorPrimario  String   @default("#C8913A") @db.VarChar(20)
+  colorFondo     String   @default("#0f0d0b") @db.VarChar(20)
+  colorCard      String   @default("#1a1712") @db.VarChar(20)
+  colorTexto     String   @default("#F0E6D3") @db.VarChar(20)
+  fuenteId       String   @default("georgia") @db.VarChar(40)
+  actualizadoEn  DateTime @default(now()) @updatedAt @db.DateTime(3)
+
+  @@map("apariencia")
+}
+
+model ConfiguracionNegocio {
+  id               Int      @id
+  rs_nombre        String   @default("HaceCafe") @db.VarChar(150)
+  rs_subtitulo     String   @default("Cafetería & Cocina Artesanal") @db.VarChar(180)
+  rs_direccion     String?  @db.VarChar(255)
+  rs_telefono      String?  @db.VarChar(60)
+  rs_cuit          String?  @db.VarChar(60)
+  rs_mesas         Int      @default(7)
+  rs_dominio       String?  @db.VarChar(500)
+  mp_alias         String?  @db.VarChar(150)
+  mp_cbu           String?  @db.VarChar(100)
+  mp_titular       String?  @db.VarChar(150)
+  mp_qr_url        String?  @db.VarChar(500)
+  transfer_alias   String?  @db.VarChar(150)
+  transfer_cbu     String?  @db.VarChar(100)
+  transfer_titular String?  @db.VarChar(150)
+  transfer_banco   String?  @db.VarChar(150)
+  actualizadoEn    DateTime @default(now()) @updatedAt @db.DateTime(3)
+
+  @@map("configuracion_negocio")
+}
+
 enum Rol {
   DUENO @map("DUEÑO")
   EMPLEADO
