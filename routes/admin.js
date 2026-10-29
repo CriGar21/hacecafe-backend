@@ -11,6 +11,7 @@ const {
   crearUsuario,
   editarUsuario,
   toggleUsuario,
+  eliminarUsuario,
   getCaja,
   getCategorias,
   crearCategoria,
@@ -36,6 +37,7 @@ router.get("/usuarios", getUsuarios);
 router.post("/usuarios", crearUsuario);
 router.put("/usuarios/:id", editarUsuario);
 router.patch("/usuarios/:id/toggle", toggleUsuario);
+router.delete("/usuarios/:id", eliminarUsuario);
 
 // â”€â”€â”€ Caja â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.get("/caja", getCaja);
