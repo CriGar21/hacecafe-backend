@@ -1,5 +1,7 @@
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
+
+const normalizarRol = (rol) => (rol === "DUEÑO" ? "DUENO" : rol);
 const prisma = new PrismaClient();
 
 // ─── DASHBOARD ────────────────────────────────────────────────
@@ -243,8 +245,13 @@ const getUsuarios = async (req, res) => {
 };
 
 const crearUsuario = async (req, res) => {
-  const { nombre, email, password, rol } = req.body;
+  const { nombre, email, password } = req.body;
+  const rol = normalizarRol(req.body.rol);
   try {
+    if (!nombre || !email || !password)
+      return res.status(400).json({ error: "Completá nombre, email y contraseña" });
+    if (!["DUENO", "EMPLEADO", "COCINA"].includes(rol))
+      return res.status(400).json({ error: "Rol inválido" });
     const existe = await prisma.usuario.findUnique({ where: { email } });
     if (existe)
       return res.status(400).json({ error: "El email ya está registrado" });
@@ -261,8 +268,11 @@ const crearUsuario = async (req, res) => {
 
 const editarUsuario = async (req, res) => {
   const { id } = req.params;
-  const { nombre, rol, password } = req.body;
+  const { nombre, password } = req.body;
+  const rol = normalizarRol(req.body.rol);
   try {
+    if (!["DUENO", "EMPLEADO", "COCINA"].includes(rol))
+      return res.status(400).json({ error: "Rol inválido" });
     const data = { nombre, rol };
     if (password) data.password = await bcrypt.hash(password, 10);
     const usuario = await prisma.usuario.update({
@@ -273,6 +283,27 @@ const editarUsuario = async (req, res) => {
     res.json(usuario);
   } catch (error) {
     res.status(500).json({ error: "Error al editar usuario" });
+  }
+};
+
+const eliminarUsuario = async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    if (!Number.isInteger(id))
+      return res.status(400).json({ error: "ID inválido" });
+    if (req.usuario?.id === id)
+      return res.status(400).json({ error: "No podés eliminar tu propio usuario" });
+    const usuario = await prisma.usuario.findUnique({ where: { id } });
+    if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
+    const pedidos = await prisma.pedido.count({ where: { usuarioId: id } });
+    if (pedidos > 0)
+      return res.status(409).json({
+        error: "Este usuario tiene pedidos registrados y no se puede eliminar. Podés desactivarlo.",
+      });
+    await prisma.usuario.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: "Error al eliminar usuario" });
   }
 };
 
@@ -425,6 +456,7 @@ module.exports = {
   crearUsuario,
   editarUsuario,
   toggleUsuario,
+  eliminarUsuario,
   getCaja,
   getCategorias,
   crearCategoria,
