@@ -1,0 +1,48 @@
+name: Inicializar base de datos HaceCafe
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: "Confirmo que esta es la nueva base Aiven y acepto sincronizar el esquema"
+        required: true
+        type: choice
+        options:
+          - "no"
+          - "si"
+
+permissions:
+  contents: read
+
+jobs:
+  sincronizar:
+    if: ${{ inputs.confirmar == 'si' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar esquema Prisma
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta configurar el secreto DATABASE_URL en GitHub Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          npx prisma validate
+
+      - name: Sincronizar tablas con Aiven
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx prisma db push --skip-generate
